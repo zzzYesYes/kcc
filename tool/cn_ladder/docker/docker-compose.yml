@@ -1,0 +1,42 @@
+services:
+  registry-proxy:
+    image: docker.1ms.run/registry:3
+    container_name: registry-proxy
+    restart: unless-stopped
+    ports:
+    - 8888:8888
+    command:
+    - /etc/docker/registry/config.yml
+    volumes:
+    - proxy_data:/var/lib/registry
+    configs:
+    - source: registry-config
+      target: /etc/docker/registry/config.yml
+
+  registry-private:
+    image: docker.1ms.run/registry:3
+    container_name: registry-private
+    restart: unless-stopped
+    ports:
+    - 8889:5000
+    volumes:
+    - private_data:/var/lib/registry
+
+configs:
+  registry-config:
+    content: |
+      version: 0.1
+      storage:
+        delete:
+          enabled: true
+        filesystem:
+          rootdirectory: /var/lib/registry
+      http:
+        addr: :8888
+      proxy:
+        remoteurl: https://docker.1ms.run
+        ttl: 2160h
+
+volumes:
+  proxy_data:
+  private_data:
