@@ -1,0 +1,20 @@
+{{- if .Values.postgres.persistence.enabled }}  # 只有开启持久化才创建 PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: {{ .Release.Namespace | default "keycloak" }}
+  labels:
+    app: postgres
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce  # 单节点读写（PostgreSQL 单实例足够）
+  resources:
+    requests:
+      storage: {{ .Values.postgres.persistence.size }}  # 从 values 读取存储大小
+  {{- if .Values.postgres.persistence.storageClass }}
+  storageClassName: {{ .Values.postgres.persistence.storageClass }}  # 指定 StorageClass
+  {{- end }}
+{{- end }}
+

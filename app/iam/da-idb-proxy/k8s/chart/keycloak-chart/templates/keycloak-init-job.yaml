@@ -1,0 +1,88 @@
+# 1. ServiceAccount：用于访问K8s API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-init-sa
+  namespace: keycloak
+automountServiceAccountToken: true  # 必须开启，才能访问K8s API
+---
+# 2. Role：授予操作Secret的权限
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keycloak-init-secret-role
+  namespace: keycloak
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "create", "update", "patch"]  # 最小必要权限
+---
+# 3. RoleBinding：绑定Role到ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-init-secret-binding
+  namespace: keycloak
+subjects:
+- kind: ServiceAccount
+  name: keycloak-init-sa
+  namespace: keycloak
+roleRef:
+  kind: Role
+  name: keycloak-init-secret-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 4. Job：执行初始化
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+  labels:
+    app: keycloak
+    component: init-job
+spec:
+  backoffLimit: 4  # 失败最多重试4次
+  template:
+    spec:
+      serviceAccountName: keycloak-init-sa
+      automountServiceAccountToken: true
+      restartPolicy: OnFailure  # 失败时重启Pod
+      containers:
+      - name: keycloak-init
+        image: keycloak-init:v1  # 替换为你的镜像地址
+        imagePullPolicy: Never  # Kind集群用Never，其他集群用IfNotPresent
+        env:
+        # Keycloak连接配置
+        - name: KEYCLOAK_URL
+          value: "http://keycloak:8080"
+        - name: KEYCLOAK_HEALTH_URL
+          value: "http://keycloak:9000"
+        - name: ADMIN_USER
+          value: "admin"
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-password
+        # 超级管理员配置
+        - name: SUPER_ADMIN_USER
+          value: "super-admin"
+        - name: SUPER_ADMIN_INIT_PASSWORD
+          value: "SuperInit@123"  # 生产环境建议从Secret读取
+        # 高权限Client配置
+        - name: HIGH_PRIV_CLIENT_ID
+          value: "idb-proxy-client"
+        - name: K8S_SECRET_NAME
+          value: "keycloak-idb-proxy-client"
+        - name: K8S_NAMESPACE
+          value: "keycloak"
+        # 资源限制（可选，生产环境建议配置）
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "256Mi"
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+

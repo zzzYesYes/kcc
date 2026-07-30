@@ -1,0 +1,6 @@
+# Slim image: code-only, requires base-keycloak-init as base
+ARG BASE_IMAGE=base-keycloak-init:v1
+FROM ${BASE_IMAGE}
+
+COPY init-keycloak.py /app/init-keycloak.py
+RUN chmod +x /app/init-keycloak.py

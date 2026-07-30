@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-proxy
+  namespace: {{ .Release.Namespace | default "keycloak" }}
+  labels:
+    app: keycloak-proxy
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.keycloakProxy.replicas }}
+  selector:
+    matchLabels:
+      app: keycloak-proxy
+      {{- include "keycloak.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: keycloak-proxy
+        {{- include "keycloak.selectorLabels" . | nindent 8 }}
+    spec:
+      # 等待 Keycloak 启动后再启动（通过 Pod 亲和性 + 启动探针）
+      containers:
+        - name: keycloak-proxy
+          image: {{ .Values.keycloakProxy.image.repository }}:{{ .Values.keycloakProxy.image.tag }}
+          imagePullPolicy: {{ .Values.keycloakProxy.image.pullPolicy }}
+          ports:
+            - containerPort: 8090
+              name: proxy-http
+          # 环境变量（从 K8s Secret 读取 Keycloak 密码，安全规范）
+          env:
+            - name: KEYCLOAK_HEALTH_URL
+              value: "http://keycloak:9000"
+            - name: ADMIN_USER
+              value: admin
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-credentials  # 替换为你的 Secret 名
+                  key: admin-password
+            - name: KEYCLOAK_URL
+              value: {{ .Values.keycloakProxy.env.KEYCLOAK_URL }}
+            - name: KC_REALM
+              value: {{ .Values.keycloakProxy.env.KC_REALM }}
+            - name: KC_CLIENT_ID
+              value: {{ .Values.keycloakProxy.env.KC_CLIENT_ID }}
+            - name: KC_CLIENT_SECRET
+              value: {{ .Values.keycloakProxy.env.KC_CLIENT_SECRET }}
+            - name: KC_NEW_CLIENT_ID
+              value: {{ .Values.keycloakProxy.env.KC_NEW_CLIENT_ID }}
+          # 健康检查（K8s 自动重启故障 Pod）
+          #          livenessProbe:
+          # httpGet:
+          #   path: /health
+          #   port: proxy-http
+          # initialDelaySeconds: 60
+          # periodSeconds: 10
+          #  readinessProbe:
+          # httpGet:
+          #   path: /health
+          #   port: proxy-http
+          # initialDelaySeconds: 30
+          # periodSeconds: 5
+

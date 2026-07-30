@@ -1,0 +1,12 @@
+# --- Web Framework ---
+fastapi
+uvicorn[standard]
+python-multipart
+# --- Tools ---
+requests
+pydantic
+python-dotenv
+# --- Tests ---
+pytest
+httpx
+dotenv

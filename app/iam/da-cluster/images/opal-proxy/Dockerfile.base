@@ -1,0 +1,31 @@
+# Fat base image: all dependencies pre-installed, no application code
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONPATH=/app
+
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; \
+    for i in 1 2 3 4 5; do \
+      apt-get update && break || echo "apt-get update retry $i..." && sleep 5; \
+    done \
+    && apt-get install -y --no-install-recommends gcc curl supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
+    -r /app/requirements.txt
+
+RUN mkdir -p /app/data/templates \
+             /app/data/tenants \
+             /app/bundles \
+             /var/log/supervisor
+
+EXPOSE 8000 8001 9000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

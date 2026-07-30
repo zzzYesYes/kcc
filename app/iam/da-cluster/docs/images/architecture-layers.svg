@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 820" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1e1e1e"/>
+    </marker>
+    <marker id="arrowhead_red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+    </marker>
+    <marker id="arrowhead_green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#22c55e"/>
+    </marker>
+    <marker id="arrowhead_orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrowhead_red_reverse" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#ef4444"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1160" height="820" fill="#fafafa" rx="8"/>
+
+  <!-- ==================== Layer 1: Client ==================== -->
+  <rect x="30" y="48" width="1100" height="42" rx="8" fill="#fff3bf" stroke="#f59e0b" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="580" y="75" text-anchor="middle" font-size="16" font-weight="600" fill="#92400e">客户端 / WebUI (oidc-client-ts)</text>
+
+  <!-- Arrow: Client -> Gateway -->
+  <line x1="580" y1="90" x2="580" y2="115" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="600" y="108" font-size="12" fill="#666">HTTP :80</text>
+
+  <!-- ==================== Layer 2: Gateway ==================== -->
+  <!-- outer: y=118, h=232, ends y=350 -->
+  <rect x="30" y="118" width="1100" height="232" rx="10" fill="#dbe4ff" fill-opacity="0.4" stroke="#4a9eed" stroke-width="1.5"/>
+  <text x="45" y="140" font-size="16" font-weight="bold" fill="#2563eb">流量层  agentgateway-system</text>
+
+  <!-- === CRDs sub-box: y=148 h=50 === -->
+  <!-- All inner content: x=120 to x=1045, span=925 -->
+  <rect x="50" y="148" width="1060" height="50" rx="6" fill="#dbe4ff" fill-opacity="0.5" stroke="#4a9eed" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="62" y="179" font-size="13" fill="#4a9eed" font-weight="600">CRDs</text>
+  <!-- 4 boxes w=220, gap=15 -->
+  <rect x="120" y="155" width="220" height="36" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1" filter="url(#shadow)"/>
+  <text x="230" y="178" text-anchor="middle" font-size="14" fill="#1e3a5f">Gateway</text>
+  <rect x="355" y="155" width="220" height="36" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1" filter="url(#shadow)"/>
+  <text x="465" y="178" text-anchor="middle" font-size="14" fill="#1e3a5f">HTTPRoute</text>
+  <rect x="590" y="155" width="220" height="36" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1" filter="url(#shadow)"/>
+  <text x="700" y="178" text-anchor="middle" font-size="14" fill="#1e3a5f">ReferenceGrant</text>
+  <rect x="825" y="155" width="220" height="36" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1" filter="url(#shadow)"/>
+  <text x="935" y="178" text-anchor="middle" font-size="14" fill="#1e3a5f">AgentgatewayPolicy</text>
+
+  <!-- === Controller sub-box: y=208 h=50 === -->
+  <rect x="50" y="208" width="1060" height="50" rx="6" fill="#e5dbff" fill-opacity="0.4" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="62" y="239" font-size="13" fill="#8b5cf6" font-weight="600">控制面</text>
+  <rect x="120" y="215" width="925" height="36" rx="6" fill="#d0bfff" stroke="#8b5cf6" stroke-width="1" filter="url(#shadow)"/>
+  <text x="582" y="238" text-anchor="middle" font-size="14" fill="#3b0764">Gateway Controller  —  监听 CRD 变更, 生成 Envoy xDS 配置</text>
+
+  <!-- === Data Plane sub-box: y=268 h=58 === -->
+  <!-- 4 boxes w=210, arrow gap=25, total=210*4+25*3=915, x=120 to 1035 -->
+  <rect x="50" y="268" width="1060" height="58" rx="6" fill="#dbe4ff" fill-opacity="0.5" stroke="#2563eb" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="62" y="303" font-size="13" fill="#2563eb" font-weight="600">数据面</text>
+  <rect x="120" y="276" width="210" height="42" rx="6" fill="#a5d8ff" stroke="#2563eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="225" y="302" text-anchor="middle" font-size="14" font-weight="600" fill="#1e3a5f">Envoy Proxy</text>
+  <line x1="330" y1="297" x2="355" y2="297" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <rect x="355" y="276" width="210" height="42" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1" filter="url(#shadow)"/>
+  <text x="460" y="302" text-anchor="middle" font-size="14" fill="#1e3a5f">路由匹配</text>
+  <line x1="565" y1="297" x2="590" y2="297" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <rect x="590" y="276" width="210" height="42" rx="6" fill="#ffc9c9" stroke="#ef4444" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="695" y="302" text-anchor="middle" font-size="14" font-weight="600" fill="#7f1d1d">ext-authz Filter</text>
+  <line x1="800" y1="297" x2="825" y2="297" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <rect x="825" y="276" width="210" height="42" rx="6" fill="#b2f2bb" stroke="#22c55e" stroke-width="1" filter="url(#shadow)"/>
+  <text x="930" y="302" text-anchor="middle" font-size="14" fill="#14532d">Header 注入/重写</text>
+
+  <!-- Vertical dashed lines between sub-boxes -->
+  <line x1="580" y1="198" x2="580" y2="208" stroke="#8b8b8b" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="580" y1="258" x2="580" y2="268" stroke="#8b8b8b" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- ==================== Arrows: Gateway(y=350) -> Layer3(y=395) ==================== -->
+  <!-- 3 arrows, labels offset to left of each arrow to avoid overlap -->
+  <line x1="200" y1="350" x2="200" y2="427" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="210" y="378" font-size="11" fill="#666">HTTP :8080</text>
+
+  <line x1="430" y1="350" x2="430" y2="427" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="440" y="378" font-size="11" fill="#666">HTTP :8090</text>
+
+  <line x1="710" y1="350" x2="710" y2="430" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="650" y="378" font-size="11" fill="#666">HTTP :8000</text>
+
+  <line x1="740" y1="360" x2="740" y2="430" stroke="#ef4444" stroke-width="1.5" marker-start="url(#arrowhead_red_reverse)" marker-end="url(#arrowhead_red)"/>
+  <text x="750" y="378" font-size="11" fill="#ef4444" font-weight="600">gRPC :9000</text>
+
+  <!-- ==================== Layer 3a: Keycloak ==================== -->
+  <rect x="30" y="395" width="520" height="200" rx="10" fill="#ffd8a8" fill-opacity="0.3" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="45" y="417" font-size="16" font-weight="bold" fill="#c2410c">身份层  keycloak</text>
+
+  <rect x="50" y="427" width="230" height="48" rx="6" fill="#ffd8a8" stroke="#f59e0b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="165" y="455" text-anchor="middle" font-size="14" fill="#7c2d12">Keycloak Server</text>
+
+  <rect x="295" y="427" width="235" height="48" rx="6" fill="#ffd8a8" stroke="#f59e0b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="412" y="450" text-anchor="middle" font-size="14" fill="#7c2d12">keycloak-proxy</text>
+  <text x="412" y="466" text-anchor="middle" font-size="11" fill="#9a3412">租户/角色/用户/IDP API :8090</text>
+
+  <rect x="50" y="487" width="230" height="36" rx="6" fill="#fff3bf" stroke="#f59e0b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="165" y="510" text-anchor="middle" font-size="13" fill="#92400e">SPI: structured-role-mapper</text>
+
+  <rect x="295" y="487" width="235" height="36" rx="6" fill="#fff3bf" stroke="#f59e0b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="412" y="510" text-anchor="middle" font-size="13" fill="#92400e">keycloak-init Job</text>
+
+  <rect x="50" y="535" width="480" height="28" rx="4" fill="none" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="290" y="554" text-anchor="middle" font-size="12" fill="#b45309">Infinispan 嵌入式缓存 (JGroups 集群同步)</text>
+
+  <!-- ==================== Layer 3b: OPA ==================== -->
+  <rect x="580" y="395" width="550" height="200" rx="10" fill="#d3f9d8" fill-opacity="0.3" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="595" y="417" font-size="16" font-weight="bold" fill="#15803d">策略层  opa</text>
+
+  <!-- PEP Pod outline -->
+  <rect x="598" y="424" width="515" height="58" rx="6" fill="#d3f9d8" fill-opacity="0.4" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="1075" y="420" font-size="11" fill="#15803d">PEP Pod</text>
+
+  <rect x="608" y="432" width="150" height="42" rx="6" fill="#b2f2bb" stroke="#22c55e" stroke-width="1" filter="url(#shadow)"/>
+  <text x="683" y="454" text-anchor="middle" font-size="13" fill="#14532d">pep-proxy</text>
+  <text x="683" y="468" text-anchor="middle" font-size="10" fill="#166534">:8000 / :9000</text>
+
+  <rect x="773" y="432" width="155" height="42" rx="6" fill="#b2f2bb" stroke="#22c55e" stroke-width="1" filter="url(#shadow)"/>
+  <text x="850" y="454" text-anchor="middle" font-size="13" fill="#14532d">bundle-server</text>
+  <text x="850" y="468" text-anchor="middle" font-size="10" fill="#166534">:8001</text>
+
+  <rect x="943" y="432" width="155" height="42" rx="6" fill="#c3fae8" stroke="#22c55e" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1020" y="454" text-anchor="middle" font-size="13" fill="#14532d">OPA (sidecar)</text>
+  <text x="1020" y="468" text-anchor="middle" font-size="10" fill="#166534">Rego :8181</text>
+
+  <rect x="598" y="500" width="515" height="63" rx="6" fill="#b2f2bb" stroke="#22c55e" stroke-width="1" filter="url(#shadow)"/>
+  <text x="865" y="535" text-anchor="middle" font-size="14" fill="#14532d">OPAL Server  策略数据同步 :7002</text>
+
+  <!-- Cross-layer arrows inside OPA -->
+  <line x1="758" y1="453" x2="773" y2="453" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowhead_green)"/>
+  <line x1="928" y1="453" x2="943" y2="453" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowhead_green)"/>
+
+  <!-- pep-proxy -> Keycloak JWKS (horizontal, between the two layer3 blocks) -->
+  <line x1="608" y1="457" x2="530" y2="457" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrowhead_orange)"/>
+  <text x="548" y="450" font-size="10" fill="#b45309">JWKS</text>
+
+  <!-- ==================== Layer 4: Application ==================== -->
+  <!-- Arrow from Gateway right side, offset to far right to avoid crossing OPA text -->
+  <line x1="1070" y1="350" x2="1070" y2="618" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="970" y="610" font-size="11" fill="#666">X-Auth-* Headers</text>
+
+  <rect x="30" y="620" width="1100" height="50" rx="8" fill="#c3fae8" fill-opacity="0.5" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="45" y="650" font-size="16" font-weight="bold" fill="#0e7490">应用层  业务后端</text>
+
+  <rect x="280" y="628" width="180" height="34" rx="6" fill="#c3fae8" stroke="#06b6d4" stroke-width="1" filter="url(#shadow)"/>
+  <text x="370" y="650" text-anchor="middle" font-size="13" fill="#164e63">App 1</text>
+
+  <rect x="480" y="628" width="180" height="34" rx="6" fill="#c3fae8" stroke="#06b6d4" stroke-width="1" filter="url(#shadow)"/>
+  <text x="570" y="650" text-anchor="middle" font-size="13" fill="#164e63">App 2</text>
+
+  <rect x="680" y="628" width="180" height="34" rx="6" fill="#c3fae8" stroke="#06b6d4" stroke-width="1" filter="url(#shadow)"/>
+  <text x="770" y="650" text-anchor="middle" font-size="13" fill="#164e63">App  ...</text>
+
+  <!-- ==================== Layer 5: Data ==================== -->
+  <!-- Keycloak->DB arrow, offset to far left to avoid app layer text -->
+  <line x1="242" y1="595" x2="242" y2="690" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+  <!-- OPA->DB arrow, offset to far right to avoid app layer text -->
+  <line x1="908" y1="595" x2="908" y2="690" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+  <rect x="30" y="692" width="1100" height="50" rx="10" fill="#e5dbff" fill-opacity="0.4" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="45" y="723" font-size="16" font-weight="bold" fill="#6b21a8">数据层  PostgreSQL</text>
+
+  <rect x="300" y="700" width="200" height="34" rx="6" fill="#d0bfff" stroke="#8b5cf6" stroke-width="1" filter="url(#shadow)"/>
+  <text x="400" y="722" text-anchor="middle" font-size="14" fill="#3b0764">keycloak DB</text>
+
+  <rect x="720" y="700" width="200" height="34" rx="6" fill="#d0bfff" stroke="#8b5cf6" stroke-width="1" filter="url(#shadow)"/>
+  <text x="820" y="722" text-anchor="middle" font-size="14" fill="#3b0764">opal DB</text>
+
+  <!-- ==================== Legend ==================== -->
+  <rect x="30" y="760" width="1100" height="45" rx="6" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="45" y="781" font-size="12" font-weight="600" fill="#666">图例:</text>
+  <line x1="85" y1="778" x2="115" y2="778" stroke="#1e1e1e" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="120" y="782" font-size="11" fill="#666">数据/请求流</text>
+  <line x1="210" y1="778" x2="240" y2="778" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowhead_red)"/>
+  <text x="245" y="782" font-size="11" fill="#666">ext-authz 鉴权</text>
+  <line x1="350" y1="778" x2="380" y2="778" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrowhead_orange)"/>
+  <text x="385" y="782" font-size="11" fill="#666">JWKS 验证</text>
+
+  <rect x="490" y="773" width="50" height="12" rx="3" fill="#dbe4ff" stroke="#4a9eed" stroke-width="0.5"/>
+  <text x="545" y="784" font-size="11" fill="#666">流量层</text>
+  <rect x="585" y="773" width="50" height="12" rx="3" fill="#ffd8a8" stroke="#f59e0b" stroke-width="0.5"/>
+  <text x="640" y="784" font-size="11" fill="#666">身份层</text>
+  <rect x="680" y="773" width="50" height="12" rx="3" fill="#d3f9d8" stroke="#22c55e" stroke-width="0.5"/>
+  <text x="735" y="784" font-size="11" fill="#666">策略层</text>
+  <rect x="775" y="773" width="50" height="12" rx="3" fill="#c3fae8" stroke="#06b6d4" stroke-width="0.5"/>
+  <text x="830" y="784" font-size="11" fill="#666">应用层</text>
+  <rect x="870" y="773" width="50" height="12" rx="3" fill="#e5dbff" stroke="#8b5cf6" stroke-width="0.5"/>
+  <text x="925" y="784" font-size="11" fill="#666">数据层</text>
+</svg>

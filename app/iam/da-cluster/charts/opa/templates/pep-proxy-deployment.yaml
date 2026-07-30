@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pep-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: pep-proxy
+    {{- include "opa.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.pepProxy.replicas }}
+  selector:
+    matchLabels:
+      app: pep-proxy
+  template:
+    metadata:
+      labels:
+        app: pep-proxy
+    spec:
+      containers:
+      # Container 1: pep-proxy + bundle-server (supervisord)
+      - name: opal-proxy
+        image: "{{ .Values.pepProxy.image.repository }}:{{ .Values.pepProxy.image.tag }}"
+        imagePullPolicy: {{ .Values.pepProxy.image.pullPolicy }}
+        ports:
+        - containerPort: 8000
+          name: pep-http
+        - containerPort: 8001
+          name: bundle-http
+        - containerPort: 9000
+          name: grpc-authz
+        env:
+        - name: OPA_URL
+          value: "{{ .Values.pepProxy.env.OPA_URL }}"
+        - name: BUNDLE_SERVER_URL
+          value: "{{ .Values.pepProxy.env.BUNDLE_SERVER_URL }}"
+        - name: BUNDLE_SERVER_SELF_URL
+          value: "{{ .Values.pepProxy.env.BUNDLE_SERVER_SELF_URL }}"
+        - name: OPAL_SERVER_URL
+          value: "{{ .Values.pepProxy.env.OPAL_SERVER_URL }}"
+        - name: OPAL_SERVER_TOKEN
+          value: "{{ .Values.opalServer.authToken }}"
+        - name: OIDC_BASE_URL
+          value: "{{ .Values.pepProxy.env.OIDC_BASE_URL }}"
+        - name: OIDC_INTERNAL_URL
+          value: "{{ .Values.pepProxy.env.OIDC_INTERNAL_URL }}"
+        - name: DB_URL
+          value: "{{ .Values.pepProxy.env.DB_URL }}"
+        - name: ENVIRONMENT
+          value: "{{ .Values.pepProxy.env.ENVIRONMENT }}"
+        - name: LOG_LEVEL
+          value: "{{ .Values.pepProxy.env.LOG_LEVEL }}"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: app-data
+          mountPath: /app/data
+        - name: app-bundles
+          mountPath: /app/bundles
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 18
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          failureThreshold: 3
+
+      # Container 2: OPAL Client with inline OPA
+      - name: opal-client
+        image: "{{ .Values.opalClient.image.repository }}:{{ .Values.opalClient.image.tag }}"
+        imagePullPolicy: {{ .Values.opalClient.image.pullPolicy }}
+        env:
+        - name: OPAL_SERVER_URL
+          value: "{{ .Values.pepProxy.env.OPAL_SERVER_URL }}"
+        - name: OPAL_CLIENT_TOKEN
+          value: "{{ .Values.opalServer.authToken }}"
+        - name: OPAL_LOG_LEVEL
+          value: "INFO"
+        - name: OPAL_INLINE_OPA_ENABLED
+          value: "true"
+        - name: OPAL_OPA_SERVER_URL
+          value: "http://localhost:8181"
+        - name: OPAL_INLINE_OPA_CONFIG
+          value: '{"services":{"bundle-server":{"url":"http://localhost:8001"}},"bundles":{"authz":{"service":"bundle-server","resource":"/api/v1/opa-bundle","polling":{"min_delay_seconds":30,"max_delay_seconds":60}}}}'
+        - name: OPAL_DATA_CONFIG_SOURCES
+          value: '{"config":{"entries":[{"url":"http://localhost:8001/api/v1/data","topics":["policy_data"],"dst_path":"/"}]}}'
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          failureThreshold: 24
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          periodSeconds: 10
+          failureThreshold: 3
+
+      volumes:
+      - name: app-data
+        emptyDir: {}
+      - name: app-bundles
+        emptyDir: {}

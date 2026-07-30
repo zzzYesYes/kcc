@@ -1,0 +1,6 @@
+apiVersion: v2
+name: opa
+description: OPAL Server + PEP Proxy (dynamic OPA policy) for da-cluster
+type: application
+version: 0.1.0
+appVersion: 0.7.4

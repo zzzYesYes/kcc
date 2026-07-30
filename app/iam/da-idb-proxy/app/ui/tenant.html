@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keycloak代理 - 租户管理</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <h2>Keycloak代理</h2>
+            <nav>
+                <ul>
+                    <li data-module="user" class="active">User</li>
+                    <li data-module="group">Group</li>
+                    <li data-module="role">Role</li>
+                    <li data-module="idp">ID Provider</li>
+                </ul>
+            </nav>
+        </div>
+
+        <div class="content-panel">
+            <div class="breadcrumb">
+                <a href="index.html">首页</a> <span class="breadcrumb-separator">&gt;</span> <span class="breadcrumb-current">租户管理</span>
+            </div>
+            <div class="tenant-selector">
+                <label for="tenantSelector">当前租户：</label>
+                <select id="tenantSelector">
+                    <option value="">加载中...</option>
+                </select>
+            </div>
+
+            <div id="contentPanel">
+                <!-- 内容将通过JavaScript动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/identity.js"></script>
+</body>
+</html>

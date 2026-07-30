@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: {{ .Release.Namespace | default "keycloak" }}  # 命名空间，默认keycloak
+  labels:
+    app: keycloak
+    {{- include "keycloak.labels" . | nindent 4 }}  # 通用标签（后续会定义）
+spec:
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: http
+      name: http
+    - protocol: TCP
+      port: 9000
+      targetPort: health
+      name: health
+  selector:
+    app: keycloak
+    {{- include "keycloak.selectorLabels" . | nindent 4 }}
+  type: ClusterIP
+

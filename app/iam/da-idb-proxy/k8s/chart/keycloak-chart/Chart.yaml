@@ -1,0 +1,15 @@
+apiVersion: v2
+name: keycloak
+description: A Helm chart for deploying Keycloak with PostgreSQL on Kubernetes
+type: application
+version: 0.1.0  # Chart 版本（自己定义，比如0.1.0）
+appVersion: 26.5.2  # Keycloak 应用版本
+keywords:
+  - keycloak
+  - authentication
+  - postgres
+home: https://www.keycloak.org/
+maintainers:
+  - name: zzc  # 替换成你的名字
+    email: z00939709@huawei.com  # 可选
+

@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "admin": {
+      "permissions": [
+        {"resource": "documents", "actions": ["create", "read", "update", "delete"]},
+        {"resource": "users", "actions": ["read", "list"]}
+      ]
+    },
+    "user": {
+      "permissions": [
+        {"resource": "documents", "actions": ["create", "read", "update"]},
+        {"resource": "profile", "actions": ["read", "update"]}
+      ]
+    }
+  }
+}

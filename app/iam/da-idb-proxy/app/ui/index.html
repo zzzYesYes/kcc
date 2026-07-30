@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keycloak代理 - 租户管理</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1>租户管理</h1>
+            <button class="btn btn-primary" id="createTenantBtn">创建租户</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Realm名称</th>
+                    <th>显示名称</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="tenantListBody">
+                <tr>
+                    <td colspan="4" class="loading">加载中</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/tenant.js"></script>
+</body>
+</html>

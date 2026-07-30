@@ -1,0 +1,253 @@
+# k8s/agentgateway.yaml
+# Agentgateway routing configuration for the opal-dynamic-policy authorization system.
+#
+# Architecture:
+#
+#   AI Agent / MCP Client
+#       │
+#       ▼  HTTP / MCP (StreamableHTTP)
+#   agentgateway proxy (agentgateway-system-opa, port 8080)
+#       │   (proxy Deployment auto-created by the agentgateway controller)
+#       │
+#       ├──[ext-authz gRPC]──► pep-proxy:9000 (envoy.service.auth.v3.Authorization/Check)
+#       │                      │ verify JWT + call OPA :8181
+#       │                      └── OK (code=0) ALLOW / PERMISSION_DENIED (code=7) DENY
+#       │
+#       └──[if allowed]──► AgentgatewayBackend targets
+#                              └── pep-proxy policy management API
+#
+# Note on proxy image:
+#   The agentgateway controller (in agentgateway-system) automatically creates a
+#   proxy Deployment in AGENTGATEWAY_NAMESPACE when it sees the Gateway resource.
+#   The proxy image is set by the controller's own configuration (helm values at
+#   install time).  If the cluster already has the proxy image pre-loaded, run
+#   deploy.sh with DEPLOY_AGENTGATEWAY=true – it will patch the proxy Deployment
+#   to use imagePullPolicy=IfNotPresent so the kubelet uses the local image.
+#
+# Prerequisites – run once before applying this file:
+#
+#   # 1. Kubernetes Gateway API CRDs
+#   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
+#
+#   # 2. Agentgateway CRDs (installed by the controller helm chart in agentgateway-system)
+#   #    If CRDs are not yet present:
+#   helm upgrade -i agentgateway-crds \
+#     oci://ghcr.io/kgateway-dev/charts/agentgateway-crds \
+#     --create-namespace --namespace agentgateway-system --version v2.2.1
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# ReferenceGrant
+# Allow agentgateway-system-opa to reference Services in opal-dynamic-policy.
+# Required for cross-namespace backend references in Gateway API.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: agentgateway-to-opal
+  namespace: opal-dynamic-policy
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: agentgateway-system-opa
+  - group: agentgateway.dev
+    kind: AgentgatewayPolicy
+    namespace: agentgateway-system-opa
+  to:
+  - group: ""
+    kind: Service
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Gateway
+# Single entry point for all agent.
+# Listens on port 8080 (HTTP management).
+# The agentgateway controller creates a proxy Deployment for this Gateway.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agent-gateway
+  namespace: agentgateway-system-opa
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+  # HTTP management listener – policy query / update APIs
+  - name: http
+    protocol: HTTP
+    port: 8080
+    allowedRoutes:
+      namespaces:
+        from: All
+
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# AgentgatewayBackend – Policy Management API (pep-proxy)
+# Exposes pep-proxy's policy CRUD endpoints through the gateway so
+# tenant_admins can manage policies via the agent gateway.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: policy-management
+  namespace: agentgateway-system-opa
+spec:
+  mcp:
+    targets:
+    - name: pep-proxy-api
+      static:
+        host: pep-proxy.opal-dynamic-policy.svc.cluster.local
+        port: 8000
+        path: /api/v1
+        protocol: StreamableHTTP
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# AgentgatewayPolicy – OPA External Authorization (gRPC ExtAuth)
+#
+# Attaches to the policy-api-route HTTPRoute so every request on that route
+# is checked by pep-proxy via gRPC ext-authz before reaching the backend.
+#
+# agentgateway calls pep-proxy:9000 via envoy.service.auth.v3.Authorization/Check.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: opa-ext-authz
+  namespace: agentgateway-system-opa
+spec:
+  traffic:
+    extAuth:
+      backendRef:
+        name: pep-proxy
+        namespace: opal-dynamic-policy
+        port: 9000
+      grpc: {}
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: policy-api-route
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTPRoute – Policy Management API (protected by OPA ext-authz)
+#
+# Route: agent-gateway:8080/api/v1/** → pep-proxy:8000
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: policy-api-route
+  namespace: agentgateway-system-opa
+spec:
+  parentRefs:
+  - name: agent-gateway
+    sectionName: http
+  rules:
+  # ── Authorization check ──────────────────────────────────────────────────
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/auth/check
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: auth
+        - name: x-authz-action
+          value: read
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000
+  # ── Policy read (list) ───────────────────────────────────────────────────
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/policies
+      method: GET
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: policies
+        - name: x-authz-action
+          value: list
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000
+  # ── Policy write ─────────────────────────────────────────────────────────
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/policies
+      method: POST
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: policies
+        - name: x-authz-action
+          value: create
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/policies
+      method: PUT
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: policies
+        - name: x-authz-action
+          value: update
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/policies
+      method: DELETE
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: policies
+        - name: x-authz-action
+          value: delete
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000
+  # ── Template listing (any authenticated user) ────────────────────────────
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1/policies/templates
+      method: GET
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: x-authz-resource
+          value: templates
+        - name: x-authz-action
+          value: list
+    backendRefs:
+    - name: pep-proxy
+      namespace: opal-dynamic-policy
+      port: 8000

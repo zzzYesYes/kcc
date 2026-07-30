@@ -1,0 +1,135 @@
+// pep-proxy/proto/ext_authz.proto
+//
+// Minimal self-contained Envoy ext-authz v3 proto for the pep-proxy gRPC
+// external authorisation endpoint.
+//
+// Derived from envoy/service/auth/v3/attribute_context.proto and
+// envoy/service/auth/v3/authorization.proto — stripped to only the fields
+// that agentgateway and pep-proxy actually use. No external imports required.
+
+syntax = "proto3";
+
+package envoy.service.auth.v3;
+
+option java_multiple_files = true;
+option java_package = "io.envoyproxy.envoy.service.auth.v3";
+
+// ---------------------------------------------------------------------------
+// Authorization service
+// ---------------------------------------------------------------------------
+
+service Authorization {
+  // Performs an authorisation check on an incoming request.
+  rpc Check(CheckRequest) returns (CheckResponse) {}
+}
+
+// ---------------------------------------------------------------------------
+// Request
+// ---------------------------------------------------------------------------
+
+message CheckRequest {
+  // Context of the request, including HTTP attributes.
+  AttributeContext attributes = 1;
+}
+
+message AttributeContext {
+  // Wrapper for the inbound HTTP request.
+  message Request {
+    // HTTP-specific attributes of the request.
+    HttpRequest http = 2;
+  }
+
+  // HTTP attributes of the request (headers, method, path, etc.).
+  message HttpRequest {
+    // Unique ID assigned to the request by the proxy (informational).
+    string id = 1;
+    // HTTP method (GET, POST, PUT, DELETE, …).
+    string method = 2;
+    // Request headers as a flat key→value map (lower-cased names).
+    map<string, string> headers = 3;
+    // Request path including query string (e.g. "/tools/search?q=foo").
+    string path = 4;
+    // Host header value.
+    string host = 5;
+    // URI scheme (http / https).
+    string scheme = 6;
+    // Raw query string (without the leading "?").
+    string query = 7;
+    // Content-length in bytes.
+    int64 size = 9;
+    // HTTP protocol version (e.g. "HTTP/1.1").
+    string protocol = 10;
+    // Raw request body (may be empty when body buffering is disabled).
+    bytes body = 11;
+  }
+
+  Request request = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Response
+// ---------------------------------------------------------------------------
+
+// Minimal gRPC Status (mirrors google.rpc.Status without the Any dependency).
+message Status {
+  // gRPC status code: 0 = OK (allow), 7 = PERMISSION_DENIED (deny),
+  // 16 = UNAUTHENTICATED, 13 = INTERNAL.
+  int32 code = 1;
+  // Human-readable status message forwarded to the caller.
+  string message = 2;
+}
+
+message CheckResponse {
+  // gRPC-level result of the check.
+  Status status = 1;
+
+  // Payload varies based on whether the request was allowed or denied.
+  oneof http_response {
+    // Populated when the request is allowed (status.code == 0).
+    OkHttpResponse ok_response = 2;
+    // Populated when the request is denied (status.code != 0).
+    DeniedHttpResponse denied_response = 3;
+  }
+}
+
+// Returned when the authorisation check passes.
+message OkHttpResponse {
+  // Headers to inject into the forwarded request (e.g. x-auth-user).
+  // Field number 2 matches the upstream Envoy proto.
+  repeated HeaderValueOption headers = 2;
+  // Headers to strip from the forwarded request.
+  repeated string headers_to_remove = 5;
+}
+
+// Returned when the authorisation check fails.
+message DeniedHttpResponse {
+  // HTTP status code to return to the client.
+  HttpStatus status = 1;
+  // Additional headers to include in the error response.
+  repeated HeaderValueOption headers = 2;
+  // Error response body.
+  string body = 3;
+}
+
+// HTTP status code wrapper.
+message HttpStatus {
+  // Standard HTTP status code (200, 401, 403, …).
+  uint32 code = 1;
+}
+
+// A header name/value pair together with an optional keep flag.
+message HeaderValueOption {
+  // The header to inject / modify.
+  HeaderValue header = 1;
+  // When true, preserve the existing header value if already present.
+  // Default false means overwrite.
+  bool keep = 2;
+}
+
+// A single HTTP header key-value pair.
+message HeaderValue {
+  // Header name (must be lower-cased).
+  string key = 1;
+  // Header value.
+  string value = 2;
+}

@@ -1,0 +1,72 @@
+# Keycloak 核心配置
+keycloak:
+  # 副本数（对应原来 StatefulSet 的 replicas: 2）
+  replicas: 2
+  # 镜像配置
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: 26.5.2
+    pullPolicy: IfNotPresent
+  # 管理员账号密码（原来硬编码的 admin/admin）
+  admin:
+    username: admin
+    secretName: keycloak-credentials # 存放密码的secret名称
+    passwordKey: admin-password # secret中存储密码的key
+  # 资源限制（对应原来的 resources）
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2000Mi
+    requests:
+      cpu: 500m
+      memory: 1700Mi
+  # Keycloak 配置参数（环境变量）
+  config:
+    proxyHeaders: xforwarded
+    httpEnabled: true
+    hostnameStrict: false
+    healthEnabled: true
+    cache: ispn
+    db:
+      type: postgres
+      host: postgres  # PostgreSQL Service 名称
+      database: keycloak
+      username: keycloak
+      secretName: postgres-credentials # 存放DB密码的secret名称
+      passwordKey: postgres-password
+
+# PostgreSQL 配置（对应原来的 PostgreSQL Deployment）
+postgres:
+  enabled: true
+  replicas: 1
+  image:
+    repository: postgres
+    tag: 17
+    pullPolicy: IfNotPresent
+  # PostgreSQL 账号密码（原来硬编码的）
+  auth:
+    username: keycloak
+    database: keycloak
+    secretName: postgres-credentials
+    passwordKey: postgres-password
+  # 端口
+  port: 5432
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+# Keycloak proxy核心配置
+keycloakProxy:
+  replicas: 2
+  image:
+    repository: keycloak-proxy
+    tag: v1
+    pullPolicy: IfNotPresent
+  env:
+    KEYCLOAK_URL: "http://keycloak.keycloak.svc.cluster.local:8080"
+    KC_REALM: "master"
+    KC_CLIENT_ID: "idb-proxy-client"
+    # Supply this through a private Helm values file or secret-management system.
+    KC_CLIENT_SECRET: ""
+    KC_NEW_CLIENT_ID: "idb-proxy-client"

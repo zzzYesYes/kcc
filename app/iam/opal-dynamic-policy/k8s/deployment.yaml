@@ -1,0 +1,315 @@
+# k8s/deployment.yaml
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: opal-dynamic-policy
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: docker.io/library/postgres:17
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "opal"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          value: "postgres"
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command: [pg_isready, -U, postgres]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: [pg_isready, -U, postgres]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+# OPAL Server Deployment
+# OPAL Server acts as the policy distribution hub:
+#   - Receives data-update notifications from bundle-server
+#   - Broadcasts updates to OPAL Clients via WebSocket (backed by PostgreSQL pub/sub)
+#   - Serves policy bundles to OPAL Clients
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-server
+  namespace: opal-dynamic-policy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opal-server
+  template:
+    metadata:
+      labels:
+        app: opal-server
+    spec:
+      containers:
+      - name: opal-server
+        image: docker.io/permitio/opal-server:0.7.4
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 7002
+        env:
+        - name: OPAL_SERVER_PORT
+          value: "7002"
+        - name: OPAL_LOG_LEVEL
+          value: "INFO"
+        # PostgreSQL broadcast channel for multi-replica pub/sub
+        - name: OPAL_BROADCAST_URI
+          value: "postgresql://postgres:postgres@postgres:5432/opal?sslmode=disable"
+        # Token that OPAL Clients must present when connecting
+        - name: OPAL_AUTH_MASTER_TOKEN
+          value: "opal-server-token"
+        # Pre-seed data sources so OPAL Clients know where to fetch tenant data.
+        # bundle-server is reachable at http://bundle-server:8001 (K8s Service).
+        - name: OPAL_DATA_CONFIG_SOURCES
+          value: >-
+            {"config":{"entries":[{"url":"http://bundle-server:8001/api/v1/data","topics":["policy_data"],"dst_path":"/"}]}}
+        - name: OPAL_POLICY_REPO_POLLING_INTERVAL
+          value: "30"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7002
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+# PEP Proxy Deployment
+# Single pod with three containers:
+#   1. opal-proxy  – combined pep-proxy (8000) + bundle-server (8001) image
+#   2. opal-client – OPAL Client with *inline* OPA engine (port 8181)
+#                    OPA is configured to pull policy bundles from bundle-server
+#                    OPAL Client handles real-time data pushes from OPAL Server
+#
+# Note: bundle-server runs as a second process inside opal-proxy (supervisord).
+#       Policy & bundle data live on the shared emptyDir volume /app/data.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pep-proxy
+  namespace: opal-dynamic-policy
+spec:
+  # Keep at 1 replica: bundle data is stored on emptyDir (pod-local).
+  # Scale with a shared PVC or external storage if multiple replicas are needed.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pep-proxy
+  template:
+    metadata:
+      labels:
+        app: pep-proxy
+    spec:
+      containers:
+
+      # -----------------------------------------------------------------------
+      # Container 1: combined PEP Proxy + Bundle Server (supervisord)
+      # -----------------------------------------------------------------------
+      - name: opal-proxy
+        image: docker.io/library/opal-proxy:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: pep-http
+        - containerPort: 8001
+          name: bundle-http
+        - containerPort: 9000
+          name: grpc-authz
+        env:
+        # OPA is provided by the OPAL Client sidecar (inline mode, localhost:8181)
+        - name: OPA_URL
+          value: "http://localhost:8181"
+        # OPA REST API – bundle-server pushes policies/data directly (no polling delay)
+        - name: OPA_URL
+          value: "http://localhost:8181"
+        # Bundle-server runs in the same container on port 8001
+        - name: BUNDLE_SERVER_URL
+          value: "http://localhost:8001"
+        # Public address of bundle-server used by OPAL Server to send back to clients
+        - name: BUNDLE_SERVER_SELF_URL
+          value: "http://bundle-server:8001"
+        # OPAL Server address (used by bundle-server to push update notifications)
+        - name: OPAL_SERVER_URL
+          value: "http://opal-server:7002"
+        - name: OPAL_SERVER_TOKEN
+          value: "opal-server-token"
+        # JWT verification: set OIDC_BASE_URL for OIDC discovery (RS256)
+        # or JWT_SECRET for HS256 fallback (dev/testing)
+        - name: OIDC_BASE_URL
+          value: ""          # e.g. https://auth.example.com
+        - name: JWT_SECRET
+          value: "jwt-secret"   # overridden by secret in production
+        # PostgreSQL connection for bundle-server policy persistence
+        - name: DB_URL
+          value: "postgresql://postgres:postgres@postgres:5432/opal"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: app-data
+          mountPath: /app/data
+        - name: app-bundles
+          mountPath: /app/bundles
+        # startupProbe runs first; once it succeeds, liveness/readiness take over.
+        # Gives up to 90 s for supervisord + two uvicorn processes to initialise.
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 18   # 10 + 5*18 = 100 s maximum startup window
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          failureThreshold: 3
+
+      # -----------------------------------------------------------------------
+      # Container 2: OPAL Client with inline OPA engine
+      # OPAL Client:
+      #   - Connects to OPAL Server via WebSocket to receive real-time updates
+      #   - Starts an embedded OPA process (OPAL_INLINE_OPA_ENABLED=true)
+      #   - Pushes policy + data changes into OPA
+      # OPA (inline):
+      #   - Serves the OPA REST API at localhost:8181
+      #   - Configured via OPAL_INLINE_OPA_CONFIG to pull policy bundles from
+      #     bundle-server (localhost:8001/api/v1/opa-bundle) on a polling schedule
+      #   - Verifies JWT tokens using per-tenant JWKS URLs (io.jwt.decode_verify)
+      # -----------------------------------------------------------------------
+      - name: opal-client
+        image: docker.io/permitio/opal-client:0.7.4
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: OPAL_SERVER_URL
+          value: "http://opal-server:7002"
+        - name: OPAL_CLIENT_TOKEN
+          value: "opal-server-token"
+        - name: OPAL_LOG_LEVEL
+          value: "INFO"
+        # Enable inline OPA – OPAL Client manages OPA internally
+        - name: OPAL_INLINE_OPA_ENABLED
+          value: "true"
+        # OPA listens on 8181 (default); pep-proxy uses http://localhost:8181
+        - name: OPAL_OPA_SERVER_URL
+          value: "http://localhost:8181"
+        # Pass OIDC_BASE_URL into OPA's runtime environment so Rego policies
+        # can access it via opa.runtime().env["OIDC_BASE_URL"]
+        - name: OPA_ENV_OIDC_BASE_URL
+          value: ""          # e.g. https://auth.example.com – mirror of opal-proxy setting
+        # OPA configuration injected into the inline OPA process.
+        # Configures OPA to pull policy bundles from bundle-server (same pod).
+        - name: OPAL_INLINE_OPA_CONFIG
+          value: >-
+            {"services":{"bundle-server":{"url":"http://localhost:8001"}},"bundles":{"authz":{"service":"bundle-server","resource":"/api/v1/opa-bundle","polling":{"min_delay_seconds":30,"max_delay_seconds":60}}}}
+        # Data sources for OPAL Client: fetch tenant data from bundle-server
+        - name: OPAL_DATA_CONFIG_SOURCES
+          value: >-
+            {"config":{"entries":[{"url":"http://localhost:8001/api/v1/data","topics":["policy_data"],"dst_path":"/"}]}}
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        # startupProbe: wait for inline OPA (port 8181) to accept connections.
+        # OPA must be running before pep-proxy can authorise any request.
+        # Gives up to 120 s for OPAL Client to start OPA and connect to OPAL Server.
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          failureThreshold: 24   # 15 + 5*24 = 135 s maximum startup window
+        # Liveness: once OPA is up, keep checking it is alive.
+        # Use a generous period so transient OPA hiccups don't kill the container.
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          periodSeconds: 20
+          failureThreshold: 3
+        # Readiness: the Pod is ready to serve traffic when OPA is healthy.
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          periodSeconds: 10
+          failureThreshold: 3
+
+      volumes:
+      - name: app-data
+        emptyDir: {}
+      - name: app-bundles
+        emptyDir: {}

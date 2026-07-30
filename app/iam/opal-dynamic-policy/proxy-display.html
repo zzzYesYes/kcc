@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEP Proxy 策略管理控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f0f2f5;
+            color: #1e293b;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* 侧边栏导航 */
+        .sidebar {
+            width: 220px;
+            background: white;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+            padding: 24px 0;
+        }
+
+        .logo {
+            padding: 0 20px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 24px;
+        }
+
+        .logo h2 {
+            color: #2563eb;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-item {
+            padding: 12px 20px;
+            margin: 4px 12px;
+            border-radius: 8px;
+            color: #64748b;
+            cursor: default;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #eef2ff;
+            color: #2563eb;
+            font-weight: 500;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            flex: 1;
+            padding: 24px 32px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #0f172a;
+        }
+
+        .tenant-selector {
+            background: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tenant-selector select {
+            border: none;
+            padding: 8px;
+            font-size: 14px;
+            color: #1e293b;
+            background: #f8fafc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* 卡片样式 */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #0f172a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .badge {
+            background: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #475569;
+        }
+
+        .badge.primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .badge.success {
+            background: #10b981;
+            color: white;
+        }
+
+        .badge.warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .badge.error {
+            background: #ef4444;
+            color: white;
+        }
+
+        /* 表格样式 */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th {
+            text-align: left;
+            padding: 12px 16px;
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 500;
+            font-size: 14px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .table td {
+            padding: 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .role-tag {
+            background: #eef2ff;
+            color: #2563eb;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .tenant-tag {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            color: #475569;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            margin: 0 4px;
+        }
+
+        .action-btn:hover {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .action-btn.delete:hover {
+            background: #dc2626;
+            border-color: #dc2626;
+        }
+
+        .action-btn.update:hover {
+            background: #f59e0b;
+            border-color: #f59e0b;
+        }
+
+        /* 表单样式 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #1e293b;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: #f8fafc;
+        }
+
+        .form-row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        /* 操作复选框组 */
+        .action-group {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .action-checkboxes {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .action-checkboxes label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: normal;
+            cursor: pointer;
+        }
+
+        .action-checkboxes input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        /* 命令行展示 */
+        .cli-demo {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-top: 16px;
+        }
+
+        .cli-command {
+            color: #60a5fa;
+        }
+
+        .cli-output {
+            color: #a78bfa;
+            margin-left: 20px;
+            white-space: pre-wrap;
+        }
+
+        .cli-comment {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .cli-input {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            width: 120px;
+            margin: 0 4px;
+        }
+
+        .cli-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+            margin-left: 8px;
+        }
+
+        .cli-btn:hover {
+            background: #1d4ed8;
+        }
+
+        .cli-result {
+            margin-top: 12px;
+            padding: 12px;
+            background: #0f172a;
+            border-left: 4px solid #2563eb;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+
+        /* 预览区域 */
+        .preview-area {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .preview-code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        /* 按钮样式 */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #1e293b;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #f8fafc;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        /* 提示信息 */
+        .info-message {
+            background: #e2e8f0;
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: #475569;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .success-message {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 16px;
+            border-left: 4px solid #10b981;
+        }
+
+        /* 沙盘测试样式 */
+        .sandbox {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+        }
+
+        .test-result {
+            background: rgba(255,255,255,0.1);
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .test-result.allowed {
+            background: rgba(16, 185, 129, 0.2);
+            border-left: 4px solid #10b981;
+        }
+
+        .test-result.denied {
+            background: rgba(239, 68, 68, 0.2);
+            border-left: 4px solid #ef4444;
+        }
+
+        .test-result.cross-tenant {
+            background: rgba(245, 158, 11, 0.2);
+            border-left: 4px solid #f59e0b;
+        }
+
+        .custom-input {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .custom-select {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .custom-select option {
+            background: #4c1d95;
+            color: white;
+        }
+
+        .custom-input::placeholder {
+            color: rgba(255,255,255,0.6);
+        }
+
+        .test-item {
+            margin-bottom: 16px;
+        }
+
+        .test-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: rgba(255,255,255,0.9);
+        }
+
+        /* 统计卡片 */
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            flex: 1;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2563eb;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        /* 租户提示 */
+        .tenant-hint {
+            font-size: 12px;
+            color: #64748b;
+            margin-left: 8px;
+        }
+
+        /* 编辑模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            color: #1e293b;
+        }
+
+        .close-btn {
+            font-size: 24px;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .close-btn:hover {
+            color: #1e293b;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏导航 -->
+        <div class="sidebar">
+            <div class="logo">
+                <h2>🔐 PEP Proxy</h2>
+            </div>
+            <div class="nav-item">
+                <span>📋</span> 策略管理
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 头部 -->
+            <div class="header">
+                <h1>策略管理</h1>
+                <div class="tenant-selector">
+                    <span>当前管理租户:</span>
+                    <select id="tenantSelect" onchange="switchTenant()">
+                        <option value="tenant-1">租户 tenant-1</option>
+                        <option value="tenant-2">租户 tenant-2</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 统计卡片 -->
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="policyCount">4</div>
+                    <div class="stat-label">总策略数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="roleCount">3</div>
+                    <div class="stat-label">角色数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="resourceCount">2</div>
+                    <div class="stat-label">资源类型</div>
+                </div>
+            </div>
+
+            <!-- API 接口展示卡片 - 新增PUT和DELETE -->
+            <div class="card">
+                <div class="card-title">
+                    <span>📡 PEP Proxy 对外暴露接口</span>
+                    <span class="badge">Base URL: http://pep-proxy:8000/api/v1</span>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>方法</th>
+                            <th>接口路径</th>
+                            <th>描述</th>
+                            <th>所需角色</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge" style="background: #10b981; color: white;">GET</span></td>
+                            <td><code>/policies</code></td>
+                            <td>列出当前租户所有策略</td>
+                            <td><span class="role-tag">租户内任意角色</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #10b981; color: white;">GET</span></td>
+                            <td><code>/policies/templates</code></td>
+                            <td>查看模板列表</td>
+                            <td><span class="role-tag">tenant_admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #f59e0b; color: white;">POST</span></td>
+                            <td><code>/policies/template/{template_name}</code></td>
+                            <td>渲染模板查看效果</td>
+                            <td><span class="role-tag">tenant_admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #f59e0b; color: white;">POST</span></td>
+                            <td><code>/policies/role</code></td>
+                            <td>创建角色policy</td>
+                            <td><span class="role-tag">tenant_admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #f59e0b; color: white;">PUT</span></td>
+                            <td><code>/policies/role/{policy_id}</code></td>
+                            <td>更新角色policy</td>
+                            <td><span class="role-tag">tenant_admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #ef4444; color: white;">DELETE</span></td>
+                            <td><code>/policies/role/{policy_id}</code></td>
+                            <td>删除角色policy</td>
+                            <td><span class="role-tag">tenant_admin</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-message">
+                    ℹ️ PUT和DELETE接口支持对已创建策略进行更新和删除操作
+                </div>
+            </div>
+
+            <!-- 模板展示区 -->
+            <div class="card">
+                <div class="card-title">
+                    <span>🎨 可用策略模板</span>
+                    <span class="badge primary">GET /policies/templates</span>
+                </div>
+                <div style="background: #f8fafc; padding: 20px; border-radius: 8px;">
+                    <h4 style="margin-bottom: 12px; color: #2563eb;">role_based</h4>
+                    <p style="color: #64748b; margin-bottom: 12px;">基于角色的访问控制，为特定角色授予资源权限</p>
+                    <div style="background: #e2e8f0; padding: 12px; border-radius: 6px;">
+                        <code>参数: role, resource, actions, tenant_id</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 创建策略区域 -->
+            <div class="card">
+                <div class="card-title">
+                    <span>✨ 创建新策略 (支持自定义)</span>
+                    <span class="badge primary">POST /policies/role</span>
+                </div>
+                
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>角色 (Role) <span style="color: #64748b;">可自定义</span></label>
+                        <input type="text" id="roleInput" class="form-control" value="doctor" placeholder="例如: viewer, editor, admin, doctor">
+                    </div>
+                    <div class="form-group">
+                        <label>资源 (Resource) <span style="color: #64748b;">可自定义</span></label>
+                        <input type="text" id="resourceInput" class="form-control" value="medical-records" placeholder="例如: documents, projects, medical-records">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>操作 (Actions) <span style="color: #64748b;">可多选</span></label>
+                    <div class="action-group">
+                        <div class="action-checkboxes">
+                            <label><input type="checkbox" class="action-checkbox" value="create" checked> create</label>
+                            <label><input type="checkbox" class="action-checkbox" value="read" checked> read</label>
+                            <label><input type="checkbox" class="action-checkbox" value="update"> update</label>
+                            <label><input type="checkbox" class="action-checkbox" value="delete"> delete</label>
+                            <label><input type="checkbox" class="action-checkbox" value="list"> list</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>租户ID</label>
+                        <input type="text" id="tenantIdDisplay" value="tenant-1" readonly style="background: #e2e8f0;">
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-secondary" id="previewBtn">👁️ 预览模板</button>
+                            <button class="btn btn-primary" id="createBtn">✅ 创建策略</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预览结果区域 -->
+                <div id="previewArea" class="preview-area" style="display: none;">
+                    <h4>📝 模板预览结果 <span style="font-size: 12px; color: #64748b; font-weight: normal;">POST /policies/template/role_based</span></h4>
+                    <div class="preview-code" id="previewCode"></div>
+                </div>
+
+                <!-- 创建成功提示 -->
+                <div id="successMessage" class="success-message" style="display: none;"></div>
+            </div>
+
+            <!-- 现有策略列表 - 动态更新 -->
+            <div class="card">
+                <div class="card-title">
+                    <span>📋 现有策略列表 (动态更新)</span>
+                    <span class="badge success">支持PUT/DELETE</span>
+                    <button class="btn btn-secondary" style="margin-left: auto;" onclick="refreshPolicies()">🔄 刷新</button>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>策略ID</th>
+                            <th>角色</th>
+                            <th>资源</th>
+                            <th>操作</th>
+                            <th>租户</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="policyTableBody">
+                        <!-- 动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 编辑模态框 -->
+            <div id="editModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>编辑策略</h3>
+                        <span class="close-btn" onclick="closeModal()">&times;</span>
+                    </div>
+                    <div id="editForm">
+                        <input type="hidden" id="editPolicyId">
+                        <div class="form-group">
+                            <label>角色</label>
+                            <input type="text" id="editRole" class="form-control" readonly style="background: #e2e8f0;">
+                        </div>
+                        <div class="form-group">
+                            <label>资源</label>
+                            <input type="text" id="editResource" class="form-control" readonly style="background: #e2e8f0;">
+                        </div>
+                        <div class="form-group">
+                            <label>操作 (可多选)</label>
+                            <div class="action-group">
+                                <div class="action-checkboxes">
+                                    <label><input type="checkbox" class="edit-action-checkbox" value="create"> create</label>
+                                    <label><input type="checkbox" class="edit-action-checkbox" value="read"> read</label>
+                                    <label><input type="checkbox" class="edit-action-checkbox" value="update"> update</label>
+                                    <label><input type="checkbox" class="edit-action-checkbox" value="delete"> delete</label>
+                                    <label><input type="checkbox" class="edit-action-checkbox" value="list"> list</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                        <button class="btn btn-warning" onclick="updatePolicy()">更新策略</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 命令行操作示例 - 新增PUT和DELETE示例 -->
+            <div class="card">
+                <div class="card-title">
+                    <span>💻 命令行交互示例</span>
+                    <span class="badge">可执行</span>
+                </div>
+
+                <div class="cli-demo">
+                    <div><span class="cli-comment"># 1. 首先设置JWT（模拟）</span></div>
+                    <div><span class="cli-command">export ADMIN_JWT="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."</span></div>
+                    <div> </div>
+
+                    <div><span class="cli-comment"># 2. 列出当前租户所有策略</span></div>
+                    <div><span class="cli-command">curl -X GET http://pep-proxy:8000/api/v1/policies \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT" \</span></div>
+                    <div><span class="cli-command">  -H "X-Tenant-ID: tenant-1"</span></div>
+                    <button class="cli-btn" onclick="runCommand('list-policies')">运行</button>
+                    <div id="list-policies-result" class="cli-result" style="display: none;"></div>
+                    <div> </div>
+                    
+                    <div><span class="cli-comment"># 2. 查看可用模板</span></div>
+                    <div><span class="cli-command">curl -X GET http://pep-proxy:8000/api/v1/policies/templates \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT"</span></div>
+                    <button class="cli-btn" onclick="runCommand('templates')">运行</button>
+                    <div id="templates-result" class="cli-result" style="display: none;"></div>
+                    <div> </div>
+
+                    <div><span class="cli-comment"># 3. 预览模板效果</span></div>
+                    <div><span class="cli-command">curl -X POST http://pep-proxy:8000/api/v1/policies/template/role_based \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT" \</span></div>
+                    <div><span class="cli-command">  -H "Content-Type: application/json" \</span></div>
+                    <div>
+                        <span class="cli-command">  -d '{</span>
+                        <input type="text" id="preview-role" class="cli-input" value="doctor" placeholder="role">
+                        <input type="text" id="preview-resource" class="cli-input" value="medical-records" placeholder="resource">
+                        <input type="text" id="preview-action" class="cli-input" value="write" placeholder="action">
+                        <input type="text" id="preview-tenant" class="cli-input" value="tenant-1" placeholder="tenant_id">
+                        <span class="cli-command">}'</span>
+                        <button class="cli-btn" onclick="runCommand('preview')">运行</button>
+                    </div>
+                    <div id="preview-result" class="cli-result" style="display: none;"></div>
+                    <div> </div>
+
+                    <div><span class="cli-comment"># 4. 创建策略</span></div>
+                    <div><span class="cli-command">curl -X POST http://pep-proxy:8000/api/v1/policies/role \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT" \</span></div>
+                    <div><span class="cli-command">  -H "Content-Type: application/json" \</span></div>
+                    <div>
+                        <span class="cli-command">  -d '{</span>
+                        <input type="text" id="create-role" class="cli-input" value="nurse" placeholder="role">
+                        <input type="text" id="create-resource" class="cli-input" value="vital-signs" placeholder="resource">
+                        <input type="text" id="create-action" class="cli-input" value="read" placeholder="action">
+                        <input type="text" id="create-tenant" class="cli-input" value="tenant-1" placeholder="tenant_id">
+                        <span class="cli-command">}'</span>
+                        <button class="cli-btn" onclick="runCommand('create')">运行</button>
+                    </div>
+                    <div id="create-result" class="cli-result" style="display: none;"></div>
+                    <div> </div>
+
+                    <div><span class="cli-comment"># 5. 更新策略 (PUT)</span></div>
+                    <div><span class="cli-command">curl -X PUT http://pep-proxy:8000/api/v1/policies/role/viewer_documents_read \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT" \</span></div>
+                    <div><span class="cli-command">  -H "Content-Type: application/json" \</span></div>
+                    <div><span class="cli-command">  -d '{"actions": ["read", "list"]}'</span></div>
+                    <button class="cli-btn" onclick="runCommand('update')">运行</button>
+                    <div id="update-result" class="cli-result" style="display: none;"></div>
+                    <div> </div>
+
+                    <div><span class="cli-comment"># 6. 删除策略 (DELETE)</span></div>
+                    <div><span class="cli-command">curl -X DELETE http://pep-proxy:8000/api/v1/policies/role/viewer_documents_read \</span></div>
+                    <div><span class="cli-command">  -H "Authorization: Bearer $ADMIN_JWT"</span></div>
+                    <button class="cli-btn" onclick="runCommand('delete')">运行</button>
+                    <div id="delete-result" class="cli-result" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- 沙盘测试 - 支持动态策略和租户隔离 -->
+            <div class="card sandbox">
+                <div class="card-title" style="color: white;">
+                    <span>🧪 权限沙盘测试 (基于动态策略 + 租户隔离)</span>
+                </div>
+                
+                <div class="form-row-2">
+                    <div class="test-item">
+                        <label class="test-label">用户所属租户</label>
+                        <select id="userTenant" class="custom-select">
+                            <option value="tenant-1">tenant-1</option>
+                            <option value="tenant-2">tenant-2</option>
+                        </select>
+                    </div>
+                    <div class="test-item">
+                        <label class="test-label">访问目标租户</label>
+                        <select id="targetTenant" class="custom-select">
+                            <option value="tenant-1">tenant-1</option>
+                            <option value="tenant-2">tenant-2</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="test-item">
+                        <label class="test-label">用户角色</label>
+                        <select id="testRole" class="custom-select">
+                            <option value="tenant_admin">tenant_admin (租户管理员)</option>
+                            <option value="super_admin">super_admin (超级管理员)</option>
+                            <option value="doctor">doctor (医生)</option>
+                            <option value="nurse">nurse (护士)</option>
+                            <option value="viewer">viewer (只读用户)</option>
+                            <option value="editor">editor (编辑用户)</option>
+                            <option value="custom">自定义...</option>
+                        </select>
+                    </div>
+                    <div class="test-item" id="customRoleContainer" style="display: none;">
+                        <label class="test-label">自定义角色</label>
+                        <input type="text" id="customRole" class="custom-input" placeholder="输入角色名称">
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="test-item">
+                        <label class="test-label">资源</label>
+                        <select id="testResource" class="custom-select">
+                            <option value="documents">documents (文档)</option>
+                            <option value="projects">projects (项目)</option>
+                            <option value="medical-records">medical-records (病历)</option>
+                            <option value="vital-signs">vital-signs (生命体征)</option>
+                            <option value="custom">自定义...</option>
+                        </select>
+                    </div>
+                    <div class="test-item" id="customResourceContainer" style="display: none;">
+                        <label class="test-label">自定义资源</label>
+                        <input type="text" id="customResource" class="custom-input" placeholder="输入资源名称">
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="test-item">
+                        <label class="test-label">操作</label>
+                        <select id="testAction" class="custom-select">
+                            <option value="create">create (创建)</option>
+                            <option value="read" selected>read (读取)</option>
+                            <option value="update">update (更新)</option>
+                            <option value="delete">delete (删除)</option>
+                            <option value="list">list (列表)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn" style="background: white; color: #2563eb; width: 100%;" onclick="runTest()">🔍 测试权限</button>
+
+                <div id="testResult" class="test-result" style="display: none;">
+                    <h4 style="margin-bottom: 12px;">测试结果</h4>
+                    <p><strong>决策:</strong> <span id="decision"></span></p>
+                    <p><strong>用户租户:</strong> <span id="userTenantDisplay"></span></p>
+                    <p><strong>目标租户:</strong> <span id="targetTenantDisplay"></span></p>
+                    <p><strong>依据:</strong> <span id="reason"></span></p>
+                    <p><strong>匹配策略:</strong> <span id="matchedPolicy"></span></p>
+                    <p><strong>耗时:</strong> 15ms</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局策略存储
+        let policies = [
+            // tenant-1 的策略
+            {
+                id: "viewer_documents_read",
+                role: "viewer",
+                resource: "documents",
+                actions: ["read"],
+                tenant: "tenant-1",
+                created: "2026-03-09 10:30"
+            },
+            {
+                id: "editor_documents_write",
+                role: "editor",
+                resource: "documents",
+                actions: ["read", "write"],
+                tenant: "tenant-1",
+                created: "2026-03-09 11:15"
+            },
+            {
+                id: "doctor_medical-records_write",
+                role: "doctor",
+                resource: "medical-records",
+                actions: ["read", "write", "update"],
+                tenant: "tenant-1",
+                created: "2026-03-09 11:30"
+            },
+            // tenant-2 的策略
+            {
+                id: "viewer_projects_read",
+                role: "viewer",
+                resource: "projects",
+                actions: ["read"],
+                tenant: "tenant-2",
+                created: "2026-03-09 09:20"
+            },
+            {
+                id: "editor_projects_write",
+                role: "editor",
+                resource: "projects",
+                actions: ["read", "write"],
+                tenant: "tenant-2",
+                created: "2026-03-09 14:30"
+            },
+            {
+                id: "nurse_vital-signs_write",
+                role: "nurse",
+                resource: "vital-signs",
+                actions: ["read", "write"],
+                tenant: "tenant-2",
+                created: "2026-03-09 15:00"
+            }
+        ];
+
+        // 当前编辑的策略ID
+        let currentEditId = null;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            renderPolicyTable();
+            updateStats();
+        });
+
+        // 租户切换
+        function switchTenant() {
+            const tenant = document.getElementById('tenantSelect').value;
+            document.getElementById('tenantIdDisplay').value = tenant;
+            document.getElementById('preview-tenant').value = tenant;
+            document.getElementById('create-tenant').value = tenant;
+            document.getElementById('userTenant').value = tenant;
+            document.getElementById('targetTenant').value = tenant;
+            renderPolicyTable();
+            updateStats();
+        }
+
+        // 自定义角色选项处理
+        document.getElementById('testRole').addEventListener('change', function(e) {
+            const container = document.getElementById('customRoleContainer');
+            container.style.display = e.target.value === 'custom' ? 'block' : 'none';
+        });
+
+        document.getElementById('testResource').addEventListener('change', function(e) {
+            const container = document.getElementById('customResourceContainer');
+            container.style.display = e.target.value === 'custom' ? 'block' : 'none';
+        });
+
+        // 获取选中的操作
+        function getSelectedActions() {
+            const checkboxes = document.querySelectorAll('.action-checkbox:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        // 预览模板
+        document.getElementById('previewBtn').addEventListener('click', function() {
+            const role = document.getElementById('roleInput').value;
+            const resource = document.getElementById('resourceInput').value;
+            const actions = getSelectedActions();
+            const tenant = document.getElementById('tenantSelect').value;
+            
+            const previewArea = document.getElementById('previewArea');
+            const previewCode = document.getElementById('previewCode');
+            
+            let regoCode = `package authz\n\ndefault allow = false\n\n`;
+            
+            actions.forEach(action => {
+                regoCode += `\nallow {\n    input.resource == "${resource}"\n    input.action == "${action}"\n    input.tenant_id == "${tenant}"\n    contains(input.roles[_], "${role}")\n}\n`;
+            });
+            
+            previewCode.textContent = regoCode;
+            previewArea.style.display = 'block';
+        });
+
+        // 创建策略
+        document.getElementById('createBtn').addEventListener('click', function() {
+            const role = document.getElementById('roleInput').value;
+            const resource = document.getElementById('resourceInput').value;
+            const actions = getSelectedActions();
+            const tenant = document.getElementById('tenantSelect').value;
+            
+            // 为每个操作创建策略
+            actions.forEach(action => {
+                const policyId = `${role}_${resource}_${action}`;
+                
+                // 检查是否已存在
+                const exists = policies.some(p => p.id === policyId && p.tenant === tenant);
+                if (!exists) {
+                    policies.push({
+                        id: policyId,
+                        role: role,
+                        resource: resource,
+                        actions: [action],
+                        tenant: tenant,
+                        created: new Date().toLocaleString()
+                    });
+                }
+            });
+            
+            // 刷新表格
+            renderPolicyTable();
+            updateStats();
+            
+            // 显示成功消息
+            const successMsg = document.getElementById('successMessage');
+            successMsg.innerHTML = `✅ 策略创建成功！已添加到策略列表。<br>角色: ${role}, 资源: ${resource}, 操作: ${actions.join(', ')}`;
+            successMsg.style.display = 'block';
+            
+            setTimeout(() => {
+                successMsg.style.display = 'none';
+            }, 5000);
+        });
+
+        // 渲染策略表格
+        function renderPolicyTable() {
+            const tenant = document.getElementById('tenantSelect').value;
+            const filteredPolicies = policies.filter(p => p.tenant === tenant);
+            const tbody = document.getElementById('policyTableBody');
+            
+            tbody.innerHTML = '';
+            filteredPolicies.forEach(policy => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><code>${policy.id}</code></td>
+                    <td><span class="role-tag">${policy.role}</span></td>
+                    <td>${policy.resource}</td>
+                    <td>${policy.actions.join(', ')}</td>
+                    <td><span class="tenant-tag">${policy.tenant}</span></td>
+                    <td>${policy.created}</td>
+                    <td>
+                        <button class="action-btn update" onclick="openEditModal('${policy.id}')">✎ PUT</button>
+                        <button class="action-btn delete" onclick="deletePolicy('${policy.id}')">🗑️ DELETE</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // 更新统计
+        function updateStats() {
+            const tenant = document.getElementById('tenantSelect').value;
+            const tenantPolicies = policies.filter(p => p.tenant === tenant);
+            
+            document.getElementById('policyCount').textContent = tenantPolicies.length;
+            
+            const roles = new Set(tenantPolicies.map(p => p.role));
+            document.getElementById('roleCount').textContent = roles.size;
+            
+            const resources = new Set(tenantPolicies.map(p => p.resource));
+            document.getElementById('resourceCount').textContent = resources.size;
+        }
+
+        // 打开编辑模态框
+        function openEditModal(policyId) {
+            const policy = policies.find(p => p.id === policyId);
+            if (policy) {
+                currentEditId = policyId;
+                document.getElementById('editPolicyId').value = policyId;
+                document.getElementById('editRole').value = policy.role;
+                document.getElementById('editResource').value = policy.resource;
+                
+                // 设置复选框
+                const checkboxes = document.querySelectorAll('.edit-action-checkbox');
+                checkboxes.forEach(cb => {
+                    cb.checked = policy.actions.includes(cb.value);
+                });
+                
+                document.getElementById('editModal').style.display = 'block';
+            }
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+            currentEditId = null;
+        }
+
+        // 更新策略 (PUT)
+        function updatePolicy() {
+            if (!currentEditId) return;
+            
+            const policy = policies.find(p => p.id === currentEditId);
+            if (policy) {
+                const checkboxes = document.querySelectorAll('.edit-action-checkbox:checked');
+                const newActions = Array.from(checkboxes).map(cb => cb.value);
+                
+                policy.actions = newActions;
+                
+                renderPolicyTable();
+                updateStats();
+                
+                alert(`✅ 策略已更新 (PUT /policies/role/${currentEditId})\n新操作: ${newActions.join(', ')}`);
+                closeModal();
+            }
+        }
+
+        // 删除策略 (DELETE)
+        function deletePolicy(policyId) {
+            if (confirm(`确定要删除策略 ${policyId} 吗？这将调用 DELETE /policies/role/${policyId}`)) {
+                policies = policies.filter(p => p.id !== policyId);
+                renderPolicyTable();
+                updateStats();
+                alert(`✅ 策略已删除 (DELETE /policies/role/${policyId})`);
+            }
+        }
+
+        // 刷新策略
+        function refreshPolicies() {
+            renderPolicyTable();
+            updateStats();
+            alert('策略列表已刷新');
+        }
+
+        // 命令行交互
+        function runCommand(cmd) {
+            if (cmd === 'templates') {
+                const result = {
+                    "templates": ["role_based"],
+                    "count": 1
+                };
+                showResult('templates-result', JSON.stringify(result, null, 2));
+            }
+            else if (cmd === 'list-policies') {
+                const tenant = document.getElementById('tenantSelect').value;
+                const tenantPolicies = policies.filter(p => p.tenant === tenant);
+                const result = {
+                    "status": "success",
+                    "policies": tenantPolicies,
+                    "count": tenantPolicies.length,
+                    "tenant_id": tenant
+                };
+                showResult('list-policies-result', JSON.stringify(result, null, 2));
+            }
+            else if (cmd === 'preview') {
+                const role = document.getElementById('preview-role').value;
+                const resource = document.getElementById('preview-resource').value;
+                const action = document.getElementById('preview-action').value;
+                const tenant = document.getElementById('preview-tenant').value;
+                
+                const result = {
+                    "status": "success",
+                    "template": "role_based",
+                    "rendered_policy": `package authz\n\ndefault allow = false\n\nallow {\n    input.resource == "${resource}"\n    input.action == "${action}"\n    input.tenant_id == "${tenant}"\n    contains(input.roles[_], "${role}")\n}`
+                };
+                showResult('preview-result', JSON.stringify(result, null, 2));
+            }
+            else if (cmd === 'create') {
+                const role = document.getElementById('create-role').value;
+                const resource = document.getElementById('create-resource').value;
+                const action = document.getElementById('create-action').value;
+                const tenant = document.getElementById('create-tenant').value;
+                
+                const policyId = `${role}_${resource}_${action}`;
+                const result = {
+                    "status": "success",
+                    "policy_id": policyId,
+                    "tenant_id": tenant,
+                    "message": "Policy created successfully"
+                };
+                showResult('create-result', JSON.stringify(result, null, 2));
+                
+                // 同时更新UI策略列表
+                const exists = policies.some(p => p.id === policyId && p.tenant === tenant);
+                if (!exists) {
+                    policies.push({
+                        id: policyId,
+                        role: role,
+                        resource: resource,
+                        actions: [action],
+                        tenant: tenant,
+                        created: new Date().toLocaleString()
+                    });
+                    renderPolicyTable();
+                    updateStats();
+                }
+            }
+            else if (cmd === 'update') {
+                const result = {
+                    "status": "success",
+                    "message": "Policy updated successfully",
+                    "policy_id": "viewer_documents_read",
+                    "updates": {"actions": ["read", "list"]}
+                };
+                showResult('update-result', JSON.stringify(result, null, 2));
+            }
+            else if (cmd === 'delete') {
+                const result = {
+                    "status": "success",
+                    "message": "Policy deleted successfully",
+                    "policy_id": "viewer_documents_read"
+                };
+                showResult('delete-result', JSON.stringify(result, null, 2));
+            }
+        }
+
+        function showResult(elementId, content) {
+            const element = document.getElementById(elementId);
+            element.textContent = content;
+            element.style.display = 'block';
+        }
+
+        // 沙盘测试 - 基于动态策略和租户隔离
+        function runTest() {
+            const userTenant = document.getElementById('userTenant').value;
+            const targetTenant = document.getElementById('targetTenant').value;
+            
+            let role = document.getElementById('testRole').value;
+            if (role === 'custom') {
+                role = document.getElementById('customRole').value;
+            }
+            
+            let resource = document.getElementById('testResource').value;
+            if (resource === 'custom') {
+                resource = document.getElementById('customResource').value;
+            }
+            
+            const action = document.getElementById('testAction').value;
+            
+            const result = document.getElementById('testResult');
+            const decision = document.getElementById('decision');
+            const userTenantDisplay = document.getElementById('userTenantDisplay');
+            const targetTenantDisplay = document.getElementById('targetTenantDisplay');
+            const reason = document.getElementById('reason');
+            const matchedPolicy = document.getElementById('matchedPolicy');
+            
+            userTenantDisplay.textContent = userTenant;
+            targetTenantDisplay.textContent = targetTenant;
+            
+            // 检查是否跨租户访问
+            const isCrossTenant = (userTenant !== targetTenant);
+            
+            // 超级管理员权限 - 可以跨租户访问
+            if (role === 'super_admin') {
+                decision.textContent = 'ALLOW';
+                decision.style.color = '#10b981';
+                reason.textContent = '超级管理员拥有跨租户访问权限';
+                matchedPolicy.textContent = 'super_admin 内置权限';
+                result.className = 'test-result allowed';
+                result.style.display = 'block';
+                return;
+            }
+            
+            // 跨租户访问检查
+            if (isCrossTenant) {
+                // 租户管理员不能跨租户
+                if (role === 'tenant_admin') {
+                    decision.textContent = 'DENY';
+                    decision.style.color = '#f59e0b';
+                    reason.textContent = `租户管理员不能跨租户访问：用户属于 ${userTenant}，但尝试访问 ${targetTenant}`;
+                    matchedPolicy.textContent = '租户隔离限制';
+                    result.className = 'test-result cross-tenant';
+                    result.style.display = 'block';
+                    return;
+                }
+                
+                // 普通用户不能跨租户
+                decision.textContent = 'DENY';
+                decision.style.color = '#f59e0b';
+                reason.textContent = `用户属于 ${userTenant}，不能访问 ${targetTenant} 的资源`;
+                matchedPolicy.textContent = '租户隔离限制';
+                result.className = 'test-result cross-tenant';
+                result.style.display = 'block';
+                return;
+            }
+            
+            // 同租户内权限检查
+            const tenantPolicies = policies.filter(p => p.tenant === targetTenant);
+            
+            // 租户管理员权限
+            if (role === 'tenant_admin') {
+                decision.textContent = 'ALLOW';
+                decision.style.color = '#10b981';
+                reason.textContent = `租户管理员拥有 ${targetTenant} 内所有资源的完全访问权限`;
+                matchedPolicy.textContent = 'tenant_admin 内置权限';
+                result.className = 'test-result allowed';
+                result.style.display = 'block';
+                return;
+            }
+            
+            // 查找匹配的策略
+            const matchingPolicies = tenantPolicies.filter(p => 
+                p.role === role && 
+                p.resource === resource && 
+                p.actions.includes(action)
+            );
+            
+            if (matchingPolicies.length > 0) {
+                decision.textContent = 'ALLOW';
+                decision.style.color = '#10b981';
+                reason.textContent = `策略允许 ${role} 对 ${resource} 执行 ${action} 操作`;
+                matchedPolicy.textContent = matchingPolicies.map(p => p.id).join(', ');
+                result.className = 'test-result allowed';
+            } else {
+                decision.textContent = 'DENY';
+                decision.style.color = '#ef4444';
+                reason.textContent = `${role}角色没有对${resource}执行${action}操作的权限`;
+                matchedPolicy.textContent = '无匹配策略';
+                result.className = 'test-result denied';
+            }
+            
+            result.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

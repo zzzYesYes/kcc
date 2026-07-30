@@ -1,0 +1,47 @@
+# Allow agentgateway-system to reference Services in keycloak namespace
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-keycloak
+  namespace: keycloak
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: agentgateway-system
+  to:
+  - group: ""
+    kind: Service
+---
+# Allow agentgateway-system to reference Services in opa namespace
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-opa
+  namespace: opa
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: agentgateway-system
+  - group: agentgateway.dev
+    kind: AgentgatewayPolicy
+    namespace: agentgateway-system
+  to:
+  - group: ""
+    kind: Service
+---
+# Allow agentgateway-system to reference Services in httpbin namespace
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-httpbin
+  namespace: httpbin
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: agentgateway-system
+  to:
+  - group: ""
+    kind: Service

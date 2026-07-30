@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: keycloak-proxy
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.keycloakProxy.replicas }}
+  selector:
+    matchLabels:
+      app: keycloak-proxy
+  template:
+    metadata:
+      labels:
+        app: keycloak-proxy
+    spec:
+      containers:
+      - name: keycloak-proxy
+        image: "{{ .Values.keycloakProxy.image.repository }}:{{ .Values.keycloakProxy.image.tag }}"
+        imagePullPolicy: {{ .Values.keycloakProxy.image.pullPolicy }}
+        ports:
+        - containerPort: 8090
+          name: proxy-http
+        env:
+        - name: KEYCLOAK_URL
+          value: "{{ .Values.keycloakProxy.env.KEYCLOAK_URL }}"
+        - name: KEYCLOAK_HEALTH_URL
+          value: "http://keycloak:9000"
+        - name: ADMIN_USER
+          value: "{{ .Values.keycloak.admin.username }}"
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-password
+        - name: KC_REALM
+          value: "{{ .Values.keycloakProxy.env.KC_REALM }}"
+        - name: KC_CLIENT_ID
+          value: "{{ .Values.keycloakProxy.env.KC_CLIENT_ID }}"
+        - name: KC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.keycloakInit.secretName }}
+              key: client-secret
+              optional: true
+        - name: KC_NEW_CLIENT_ID
+          value: "{{ .Values.keycloakProxy.env.KC_NEW_CLIENT_ID }}"
+        - name: KC_SCRIPT_MAPPER
+          value: "script-data-agent-mapper.js"
+        readinessProbe:
+          httpGet:
+            path: /api/v1/common/health
+            port: proxy-http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/v1/common/health
+            port: proxy-http
+          initialDelaySeconds: 60
+          periodSeconds: 15

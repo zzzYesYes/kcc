@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: postgres
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  serviceName: postgres
+  replicas: {{ .Values.postgres.replicas }}
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      initContainers:
+      - name: copy-init-scripts
+        image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+        command: ["sh", "-c", "cp /scripts/* /initdb/ && chmod 755 /initdb/*"]
+        volumeMounts:
+        - name: init-scripts-cm
+          mountPath: /scripts
+        - name: init-scripts
+          mountPath: /initdb
+      containers:
+      - name: postgres
+        image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+        imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+        env:
+        - name: POSTGRES_USER
+          value: "{{ .Values.postgres.auth.username }}"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: postgres-password
+        - name: POSTGRES_DB
+          value: "keycloak"
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_INITDB_ARGS
+          value: "--set=huge_pages=off"
+        ports:
+        - containerPort: {{ .Values.postgres.port }}
+          name: postgres
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        livenessProbe:
+          exec:
+            command: [pg_isready, -U, {{ .Values.postgres.auth.username }}]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: [pg_isready, -U, {{ .Values.postgres.auth.username }}]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: init-scripts
+        emptyDir: {}
+      - name: init-scripts-cm
+        configMap:
+          name: postgres-init-scripts
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: {{ .Values.postgres.persistence.size }}
+      {{- if .Values.postgres.persistence.storageClass }}
+      storageClassName: {{ .Values.postgres.persistence.storageClass }}
+      {{- end }}

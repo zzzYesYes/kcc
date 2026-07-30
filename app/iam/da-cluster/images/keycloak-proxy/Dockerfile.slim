@@ -1,0 +1,6 @@
+# Slim image: code-only, requires base-keycloak-proxy as base
+# Use on air-gapped servers for fast code updates (no network needed)
+ARG BASE_IMAGE=base-keycloak-proxy:v1
+FROM ${BASE_IMAGE}
+
+COPY app/ /app/app/

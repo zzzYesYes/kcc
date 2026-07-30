@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opal-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: opal-server
+    {{- include "opa.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.opalServer.replicas }}
+  selector:
+    matchLabels:
+      app: opal-server
+  template:
+    metadata:
+      labels:
+        app: opal-server
+    spec:
+      containers:
+      - name: opal-server
+        image: "{{ .Values.opalServer.image.repository }}:{{ .Values.opalServer.image.tag }}"
+        imagePullPolicy: {{ .Values.opalServer.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.opalServer.port }}
+        env:
+        - name: OPAL_SERVER_PORT
+          value: "{{ .Values.opalServer.port }}"
+        - name: OPAL_LOG_LEVEL
+          value: "INFO"
+        - name: OPAL_BROADCAST_URI
+          value: "{{ .Values.opalServer.broadcastUri }}"
+        - name: OPAL_AUTH_MASTER_TOKEN
+          value: "{{ .Values.opalServer.authToken }}"
+        - name: OPAL_DATA_CONFIG_SOURCES
+          value: '{"config":{"entries":[{"url":"http://bundle-server:8001/api/v1/data","topics":["policy_data"],"dst_path":"/"}]}}'
+        - name: OPAL_POLICY_REPO_POLLING_INTERVAL
+          value: "30"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: {{ .Values.opalServer.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: {{ .Values.opalServer.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 5

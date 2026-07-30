@@ -1,0 +1,17 @@
+{
+  "resources": {
+    "documents": {
+      "types": ["report", "proposal", "contract"],
+      "owners": {
+        "report-001": "user-001",
+        "proposal-002": "user-002"
+      }
+    },
+    "projects": {
+      "types": ["internal", "customer"],
+      "members": {
+        "project-001": ["user-001", "user-002"]
+      }
+    }
+  }
+}

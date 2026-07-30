@@ -1,0 +1,69 @@
+# k8s/service.yaml
+---
+# PEP Proxy – external entry point for authorization checks and policy management
+apiVersion: v1
+kind: Service
+metadata:
+  name: pep-proxy
+  namespace: opal-dynamic-policy
+  labels:
+    app: pep-proxy
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+    protocol: TCP
+  - port: 9000
+    targetPort: 9000
+    name: grpc-authz
+    protocol: TCP
+  selector:
+    app: pep-proxy
+---
+# Bundle Server – routes to the bundle-server process running on port 8001
+# inside the opal-proxy combined container (same pods as pep-proxy)
+apiVersion: v1
+kind: Service
+metadata:
+  name: bundle-server
+  namespace: opal-dynamic-policy
+  labels:
+    app: pep-proxy
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8001
+    targetPort: 8001
+    name: http
+  selector:
+    app: pep-proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opal-server
+  namespace: opal-dynamic-policy
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7002
+    targetPort: 7002
+    name: http
+  selector:
+    app: opal-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: opal-dynamic-policy
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+  selector:
+    app: postgres

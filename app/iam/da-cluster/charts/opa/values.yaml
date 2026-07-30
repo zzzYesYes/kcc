@@ -1,0 +1,32 @@
+opalServer:
+  replicas: 2
+  image:
+    repository: permitio/opal-server
+    tag: "0.7.4"
+    pullPolicy: IfNotPresent
+  port: 7002
+  authToken: "opal-server-token"
+  broadcastUri: "postgresql://keycloak:keycloak@postgres.keycloak.svc.cluster.local:5432/opal?sslmode=disable"
+
+pepProxy:
+  replicas: 1
+  image:
+    repository: opal-proxy
+    tag: v1
+    pullPolicy: IfNotPresent
+  env:
+    OPA_URL: "http://localhost:8181"
+    BUNDLE_SERVER_URL: "http://localhost:8001"
+    BUNDLE_SERVER_SELF_URL: "http://bundle-server:8001"
+    OPAL_SERVER_URL: "http://opal-server:7002"
+    OIDC_BASE_URL: "http://localhost"
+    OIDC_INTERNAL_URL: "http://keycloak.keycloak.svc.cluster.local:8080"
+    DB_URL: "postgresql://keycloak:keycloak@postgres.keycloak.svc.cluster.local:5432/opal"
+    ENVIRONMENT: "production"
+    LOG_LEVEL: "INFO"
+
+opalClient:
+  image:
+    repository: permitio/opal-client
+    tag: "0.7.4"
+    pullPolicy: IfNotPresent

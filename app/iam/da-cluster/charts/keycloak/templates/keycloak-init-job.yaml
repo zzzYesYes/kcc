@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-init-sa
+  namespace: {{ .Release.Namespace }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keycloak-init-secret-role
+  namespace: {{ .Release.Namespace }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-init-secret-binding
+  namespace: {{ .Release.Namespace }}
+subjects:
+- kind: ServiceAccount
+  name: keycloak-init-sa
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: keycloak-init-secret-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-init
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: keycloak
+    component: init-job
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      serviceAccountName: keycloak-init-sa
+      automountServiceAccountToken: true
+      restartPolicy: OnFailure
+      containers:
+      - name: keycloak-init
+        image: "{{ .Values.keycloakInit.image.repository }}:{{ .Values.keycloakInit.image.tag }}"
+        imagePullPolicy: {{ .Values.keycloakInit.image.pullPolicy }}
+        env:
+        - name: KEYCLOAK_URL
+          value: "http://keycloak:8080"
+        - name: KEYCLOAK_HEALTH_URL
+          value: "http://keycloak:9000"
+        - name: ADMIN_USER
+          value: "{{ .Values.keycloak.admin.username }}"
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-password
+        - name: SUPER_ADMIN_USER
+          value: "{{ .Values.keycloakInit.superAdmin.username }}"
+        - name: SUPER_ADMIN_INIT_PASSWORD
+          value: "{{ .Values.keycloakInit.superAdmin.password }}"
+        - name: IDB_PROXY_CLIENT_ID
+          value: "{{ .Values.keycloakInit.clientId }}"
+        - name: K8S_SECRET_NAME
+          value: "{{ .Values.keycloakInit.secretName }}"
+        - name: K8S_NAMESPACE
+          value: "{{ .Release.Namespace }}"
+        - name: DEFAULT_TENANT_REALM
+          value: "{{ .Values.keycloakInit.defaultTenant.realm }}"
+        - name: DEFAULT_TENANT_ADMIN_USER
+          value: "{{ .Values.keycloakInit.defaultTenant.adminUser }}"
+        - name: DEFAULT_TENANT_ADMIN_PASSWORD
+          value: "{{ .Values.keycloakInit.defaultTenant.adminPassword }}"
+        - name: DEFAULT_TENANT_NORMAL_USER
+          value: "{{ .Values.keycloakInit.defaultTenant.normalUser }}"
+        - name: DEFAULT_TENANT_NORMAL_PASSWORD
+          value: "{{ .Values.keycloakInit.defaultTenant.normalPassword }}"
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "256Mi"
+          requests:
+            cpu: "50m"
+            memory: "128Mi"

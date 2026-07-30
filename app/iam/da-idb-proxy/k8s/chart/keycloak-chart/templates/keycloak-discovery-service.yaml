@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: keycloak
+    {{- include "keycloak.labels" . | nindent 4 }}
+  name: keycloak-discovery
+  namespace: {{ .Release.Namespace | default "keycloak" }}
+spec:
+  selector:
+    app: keycloak
+    {{- include "keycloak.selectorLabels" . | nindent 4 }}
+  clusterIP: None
+  type: ClusterIP
+

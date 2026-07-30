@@ -1,0 +1,977 @@
+openapi: "3.1.0"
+
+info:
+  title: OPA Dynamic Policy — Tenant Admin API
+  version: "2.0.0"
+  description: |
+    面向租户管理员的策略管理 API，由 pep-proxy 对外暴露（端口 8000）。
+
+    **认证**：所有接口（/health 除外）均需在请求头携带 JWT Bearer Token。
+    Token 中须包含 `sub`、`tenant_id`、`roles`、`iss` 等 claim。
+    `roles` 为对象数组，每个元素包含 `id`（角色 UUID）和 `name`（角色名字符串）：
+    ```json
+    "roles": [
+      {"id": "11111111-...", "name": "tenant-admin"},
+      {"id": "22222222-...", "name": "viewer"}
+    ]
+    ```
+    - `name` 用于系统角色判定（`super-admin`、`tenant-admin`）
+    - `id` 用于普通用户的 policy 查询（UUID → role_bindings → policy.rules）
+    `tenant_id` 由 pep-proxy 从 `iss` 字段的 `/realms/{tenant_id}` 路径中解析（Keycloak 格式）。
+
+    **角色说明**：
+    | 角色 | 权限范围 |
+    |------|---------|
+    | `super-admin` | 无限制跨租户访问；通过 `realm_access.roles` 含 `"super-admin"` 或 token 由 Keycloak master realm 签发（iss 中 `/realms/master`）判定 |
+    | `tenant-admin` | 仅限本租户的策略增删改查；通过 `realm_access.roles` 含 `"tenant-admin"` 判定 |
+    | 普通用户 | 通过 JWT `role_ids`（UUID 列表）→ role_bindings → policies 匹配资源 |
+
+    **授权模型说明**：
+    策略（Policy）与角色分离：先创建包含 `name + rules` 的策略，再通过
+    角色绑定（Role Binding）将角色 UUID 与策略关联（1:1 绑定）。每条规则（Rule）由
+    `resource + effect` 组成，同一策略内每个资源可以独立配置 allow 或 deny。
+    OPA 在鉴权时通过 JWT `role_ids` → role_bindings → policy.rules 匹配资源和效果。
+
+    **policy_id**：创建策略时由服务端自动生成的 UUID，在响应体 `policy_id` 字段中返回。
+    后续所有操作（查询、更新、删除、角色绑定）均通过该 UUID 进行。
+    `name` 字段为用户可读的显示名称，与 `policy_id` 独立存储，不可用于路径查询。
+
+servers:
+  - url: http://pep-proxy:8000
+    description: 集群内访问
+  - url: http://localhost:8000
+    description: 本地 port-forward
+
+# ---------------------------------------------------------------------------
+# 安全方案
+# ---------------------------------------------------------------------------
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        HS256（开发）或 RS256（生产/OIDC）签发的 JWT。
+        必须包含 claims：sub, tenant_id, roles, iss。
+        roles 格式：[{"id": "<uuid>", "name": "<role-name>"}, ...]
+
+  # --------------------------------------------------------------------------
+  # 公共 Schema
+  # --------------------------------------------------------------------------
+  schemas:
+
+    EffectType:
+      type: string
+      enum: [allow, deny]
+      description: 策略效果：allow（允许）或 deny（拒绝）
+
+    PolicyRule:
+      type: object
+      required: [resource, effect]
+      description: 单条资源规则，resource 与 effect 一一对应
+      properties:
+        resource:
+          type: string
+          description: 资源名称（自由字符串，如 documents、reports）
+          example: documents
+        effect:
+          $ref: "#/components/schemas/EffectType"
+
+    PolicyCreateRequest:
+      type: object
+      required: [name, rules, tenant_id]
+      properties:
+        name:
+          type: string
+          description: 策略显示名称（human-readable label），与 policy_id（UUID）独立存储
+          example: my-policy-1
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyRule"
+          description: 策略规则列表，每个资源独立配置 allow 或 deny（至少一条）
+          example:
+            - resource: documents
+              effect: allow
+            - resource: secrets
+              effect: deny
+        tenant_id:
+          type: string
+          description: 租户 ID，必须与 JWT 中的 tenant_id 一致
+          example: tenant-abc
+        conditions:
+          type: object
+          nullable: true
+          description: 附加条件（可选，保留字段）
+          example: null
+
+    PolicyRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 策略 UUID（服务端自动生成，存储主键）
+          example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+        name:
+          type: string
+          description: 策略显示名称（用户创建时传入的 name 字段）
+          example: my-policy-1
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyRule"
+          description: 策略规则列表
+          example:
+            - resource: documents
+              effect: allow
+            - resource: secrets
+              effect: deny
+        tenant_id:
+          type: string
+          example: tenant-abc
+        conditions:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-17T08:00:00.000000"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-17T08:00:00.000000"
+
+    RoleBindingRequest:
+      type: object
+      required: [policy_id, tenant_id]
+      properties:
+        policy_id:
+          type: string
+          format: uuid
+          description: 要绑定的策略 UUID（创建策略时响应体中的 policy_id 字段）
+          example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+        tenant_id:
+          type: string
+          description: 租户 ID，必须与 JWT 中的 tenant_id 一致
+          example: tenant-abc
+
+    RolePolicyResponse:
+      type: object
+      properties:
+        role_id:
+          type: string
+          format: uuid
+          description: 角色 UUID
+          example: 11111111-1111-1111-1111-111111111111
+        policy:
+          $ref: "#/components/schemas/PolicyRecord"
+
+    AuthRequest:
+      type: object
+      required: [resource, tenant_id]
+      properties:
+        resource:
+          type: string
+          description: 要访问的资源名称
+          example: documents
+        tenant_id:
+          type: string
+          description: 目标租户 ID
+          example: tenant-abc
+        context:
+          type: object
+          nullable: true
+          description: 附加上下文（可选）
+          example: {}
+
+    AuthResponse:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+          description: 是否允许
+          example: true
+        user:
+          type: string
+          description: 用户 sub（唯一标识）
+          example: user-001
+        tenant_id:
+          type: string
+          example: tenant-abc
+        resource:
+          type: string
+          example: documents
+        reason:
+          type: string
+          nullable: true
+          example: Allowed by policy
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: 错误描述
+          example: Tenant admin access required
+
+# ---------------------------------------------------------------------------
+# 全局安全（/health 除外）
+# ---------------------------------------------------------------------------
+security:
+  - BearerAuth: []
+
+# ---------------------------------------------------------------------------
+# 接口定义
+# ---------------------------------------------------------------------------
+paths:
+
+  # --------------------------------------------------------------------------
+  # 健康检查（无需认证）
+  # --------------------------------------------------------------------------
+  /health:
+    get:
+      tags: [健康检查]
+      summary: 服务健康检查
+      description: 返回 pep-proxy 的运行状态，无需 Token。
+      security: []
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: pep-proxy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-03-17T08:00:00.000000"
+
+  # --------------------------------------------------------------------------
+  # 策略管理
+  # --------------------------------------------------------------------------
+  /api/v1/policies:
+    get:
+      tags: [策略管理]
+      summary: 列出当前租户的所有策略
+      description: |
+        返回 JWT 中 tenant_id 对应的全部策略（从 PostgreSQL 读取）。
+        任意有效 Token 均可调用；结果始终被限定在调用者自己的租户内。
+      responses:
+        "200":
+          description: 策略列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PolicyRecord"
+                  count:
+                    type: integer
+                    example: 3
+                  tenant_id:
+                    type: string
+                    example: tenant-abc
+        "401":
+          description: Token 无效或缺失
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 无 Token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags: [策略管理]
+      summary: 创建策略
+      description: |
+        为本租户创建一条 resource policy（不绑定角色）。
+        - 要求角色：`tenant-admin`
+        - `tenant_id` 必须与 JWT 中的 tenant_id 完全一致，否则返回 403
+        - `name` 字段为用户可读的显示名称，不作为存储键
+        - 服务端自动生成 UUID 作为 `policy_id`（唯一标识），在响应体中返回
+        - `rules` 为规则列表，每条规则由 `resource + effect` 组成，同一策略内每个资源可独立配置 allow/deny
+        - 策略创建后需通过 **角色绑定接口**（传入 `policy_id` UUID）与角色关联才能生效
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyCreateRequest"
+            examples:
+              mixed_rules:
+                summary: 允许 documents、拒绝 secrets
+                value:
+                  name: my-policy-1
+                  rules:
+                    - resource: documents
+                      effect: allow
+                    - resource: secrets
+                      effect: deny
+                  tenant_id: tenant-abc
+              allow_only:
+                summary: 仅允许 reports
+                value:
+                  name: reports-allow
+                  rules:
+                    - resource: reports
+                      effect: allow
+                  tenant_id: tenant-abc
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  policy_id:
+                    type: string
+                    format: uuid
+                    description: 服务端自动生成的 UUID，后续操作均使用此值
+                    example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+                  name:
+                    type: string
+                    description: 用户传入的显示名称
+                    example: my-policy-1
+                  tenant_id:
+                    type: string
+                    example: tenant-abc
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                not_admin:
+                  value: { detail: "Tenant admin access required" }
+                cross_tenant:
+                  value: { detail: "Cannot operate on other tenant" }
+
+  /api/v1/policies/{policy_id}:
+    get:
+      tags: [策略管理]
+      summary: 查看单条策略
+      description: |
+        按 policy_id（UUID）查询单条策略详情。任意有效 Token 均可调用；
+        结果被限定在调用者自己的租户内。
+        **注意**：path 参数必须是创建时返回的 UUID，策略的 `name` 字段不可用于查询。
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 策略 UUID（创建时响应体中的 policy_id 字段）
+          example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+      responses:
+        "200":
+          description: 策略详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyRecord"
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 策略不存在（包括以 name 字符串而非 UUID 查询的情况）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: Policy not found
+
+    put:
+      tags: [策略管理]
+      summary: 更新策略
+      description: |
+        更新已有策略的内容。
+        - 要求角色：`tenant-admin`
+        - path 中的 `policy_id` 为策略 UUID（创建时返回）
+        - `tenant_id` 必须与 JWT 一致
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 策略 UUID（创建时响应体中的 policy_id 字段）
+          example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyCreateRequest"
+            example:
+              name: my-policy-1
+              rules:
+                - resource: documents
+                  effect: allow
+                - resource: secrets
+                  effect: deny
+              tenant_id: tenant-abc
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  policy_id:
+                    type: string
+                    format: uuid
+                    example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 策略不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: Policy not found
+
+    delete:
+      tags: [策略管理]
+      summary: 删除策略
+      description: |
+        删除指定策略，同时级联删除该策略的所有角色绑定关系。
+        - 要求角色：`tenant-admin`
+        - `tenant_id` 为**可选** query 参数：
+          - 不传时自动使用 JWT 中的 tenant_id（tenant-admin 的典型用法）
+          - super-admin 跨租户删除时需显式传入目标 tenant_id
+      parameters:
+        - name: policy_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 策略 UUID（创建时响应体中的 policy_id 字段）
+          example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            目标租户 ID（可选）。
+            不传时默认为 JWT 中的 tenant_id；
+            super-admin 跨租户操作时需显式指定。
+          example: tenant-abc
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # --------------------------------------------------------------------------
+  # 角色-策略绑定（1:1 upsert）
+  # --------------------------------------------------------------------------
+  /api/v1/roles/{role_id}/policy:
+    post:
+      tags: [角色绑定]
+      summary: 创建角色的策略绑定
+      description: |
+        将一个 policy_id（UUID）绑定到指定角色 UUID。若该角色已有绑定则直接覆盖（upsert）。
+        如需语义上明确的"更新"操作，请使用 `PUT` 接口（已有绑定时才可调用）。
+        - 要求角色：`tenant-admin`
+        - `role_id` 为角色的 UUID（来自 Keycloak 或其他 IdP）
+        - `policy_id` 为创建策略时服务端返回的 UUID
+        - 每个角色只能绑定一条策略（1:1）
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 角色 UUID（来自 JWT role_ids 或 IdP）
+          example: 11111111-1111-1111-1111-111111111111
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleBindingRequest"
+            example:
+              policy_id: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+              tenant_id: tenant-abc
+      responses:
+        "200":
+          description: 绑定成功（新建或覆盖）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  role_id:
+                    type: string
+                    format: uuid
+                    example: 11111111-1111-1111-1111-111111111111
+                  policy_id:
+                    type: string
+                    format: uuid
+                    example: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+                  tenant_id:
+                    type: string
+                    example: tenant-abc
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      tags: [角色绑定]
+      summary: 更新角色的策略绑定
+      description: |
+        更新已存在绑定的角色所绑定的策略。若该角色尚无绑定则返回 404（需先用 POST 创建）。
+        - 要求角色：`tenant-admin`
+        - 区别于 POST（upsert）：PUT 明确表示"更新"语义，角色必须已有绑定
+        - `policy_id` 为新绑定的策略 UUID
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 角色 UUID
+          example: 11111111-1111-1111-1111-111111111111
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleBindingRequest"
+            example:
+              policy_id: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
+              tenant_id: tenant-abc
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  role_id:
+                    type: string
+                    format: uuid
+                    example: 11111111-1111-1111-1111-111111111111
+                  policy_id:
+                    type: string
+                    format: uuid
+                    example: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
+                  tenant_id:
+                    type: string
+                    example: tenant-abc
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 该角色尚无策略绑定（请先使用 POST 创建）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: No policy binding found for role
+
+    get:
+      tags: [角色绑定]
+      summary: 查询角色绑定的策略
+      description: |
+        返回指定角色 UUID 当前绑定的策略详情。任意有效 Token 均可调用。
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 角色 UUID
+          example: 11111111-1111-1111-1111-111111111111
+      responses:
+        "200":
+          description: 角色当前绑定的策略
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePolicyResponse"
+              example:
+                role_id: 11111111-1111-1111-1111-111111111111
+                policy:
+                  id: 3f2a1b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c
+                  name: my-policy-1
+                  rules:
+                    - resource: documents
+                      effect: allow
+                    - resource: secrets
+                      effect: deny
+                  tenant_id: tenant-abc
+                  created_at: "2026-03-17T08:00:00.000000"
+                  updated_at: "2026-03-17T08:00:00.000000"
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 该角色没有策略绑定
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: No policy binding found for role
+
+    delete:
+      tags: [角色绑定]
+      summary: 删除角色的策略绑定
+      description: |
+        解除指定角色 UUID 与策略的绑定关系。绑定删除后，该角色的用户将无法通过
+        Tier-3 policy 规则获得任何资源访问权限（直到重新绑定）。
+        - 要求角色：`tenant-admin`
+        - `tenant_id` 为**可选** query 参数：
+          - 不传时自动使用 JWT 中的 tenant_id（tenant-admin 的典型用法）
+          - super-admin 跨租户操作时需显式传入目标 tenant_id
+        - 绑定不存在时返回 404
+      parameters:
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 角色 UUID
+          example: 11111111-1111-1111-1111-111111111111
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            目标租户 ID（可选）。
+            不传时默认为 JWT 中的 tenant_id；
+            super-admin 跨租户操作时需显式指定。
+          example: tenant-abc
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  role_id:
+                    type: string
+                    format: uuid
+                    example: 11111111-1111-1111-1111-111111111111
+                  tenant_id:
+                    type: string
+                    example: tenant-abc
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin 或跨租户操作
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 该角色没有策略绑定
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: No policy binding found for role
+
+  # --------------------------------------------------------------------------
+  # 策略模板
+  # --------------------------------------------------------------------------
+  /api/v1/policies/templates:
+    get:
+      tags: [策略模板]
+      summary: 列出所有可用模板
+      description: |
+        返回预定义的策略模板名称列表。任意有效 Token 均可调用。
+        当前内置模板：`role_based`（基于角色的访问控制 Rego 示例）。
+      responses:
+        "200":
+          description: 模板列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: string
+                    example: [role_based]
+                  count:
+                    type: integer
+                    example: 1
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/policies/template/{template_name}:
+    post:
+      tags: [策略模板]
+      summary: 渲染策略模板
+      description: |
+        将指定模板用参数渲染，返回填充后的 Rego 策略内容（**不会持久化，仅供参考**）。
+        - 要求角色：`tenant-admin`
+        - 内置模板：`role_based`
+      parameters:
+        - name: template_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [role_based]
+          example: role_based
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 模板变量键值对（key → value 均为字符串）
+              additionalProperties:
+                type: string
+            example:
+              tenant_id: tenant-abc
+              role: viewer
+              resource: documents
+              action: read
+      responses:
+        "200":
+          description: 渲染成功，返回填充后的 Rego 内容
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  template:
+                    type: string
+                    example: role_based
+                  rendered_policy:
+                    type: string
+                    description: 填充变量后的 Rego 策略字符串（仅供展示）
+                    example: |
+                      package authz.templates.role_based
+                      default allow = false
+                      allow {
+                        input.resource == "documents"
+                        input.tenant_id == "tenant-abc"
+                        contains(input.roles[_], "viewer")
+                      }
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 非 tenant-admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 模板不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: Template unknown_template not found
+
+  # --------------------------------------------------------------------------
+  # 权限校验
+  # --------------------------------------------------------------------------
+  /api/v1/auth/check:
+    post:
+      tags: [权限校验]
+      summary: 检查当前用户是否有权访问指定资源
+      description: |
+        向 OPA 查询当前用户对 resource + tenant 的权限。
+        任意有效 Token 均可调用。
+
+        **OPA 判定逻辑（三层）**：
+        1. `super-admin`：`realm_access.roles` 含 `"super-admin"` 或 token 由 master realm 签发
+           → 无条件 ALLOW（跨租户）
+        2. `tenant-admin`：`realm_access.roles` 含 `"tenant-admin"` 且 `input.tenant_id == _user_tenant`
+           → ALLOW
+        3. 普通用户：遍历 JWT `role_ids`（UUID 列表）→ 查 `role_bindings` → 获取绑定的
+           policy UUID → 遍历 `policy.rules` → 找到 `rule.resource == input.resource`
+           且 `rule.effect == "allow"` → ALLOW
+
+        HTTP 状态码始终为 `200`，是否允许由响应体的 `allowed` 字段决定。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+            examples:
+              check_documents:
+                summary: 检查访问 documents
+                value:
+                  resource: documents
+                  tenant_id: tenant-abc
+              check_reports:
+                summary: 检查访问 reports
+                value:
+                  resource: reports
+                  tenant_id: tenant-abc
+                  context: {}
+      responses:
+        "200":
+          description: 查询成功（allowed=true 表示允许，false 表示拒绝）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                allowed:
+                  value:
+                    allowed: true
+                    user: user-001
+                    tenant_id: tenant-abc
+                    resource: documents
+                    reason: Allowed by policy
+                denied:
+                  value:
+                    allowed: false
+                    user: user-001
+                    tenant_id: tenant-abc
+                    resource: secrets
+                    reason: Denied by policy
+        "401":
+          description: Token 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: 无 Token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: OPA 服务不可用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: Authorization service unavailable

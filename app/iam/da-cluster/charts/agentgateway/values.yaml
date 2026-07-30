@@ -1,0 +1,4 @@
+gateway:
+  name: agentgateway-proxy
+  port: 80
+  className: agentgateway
