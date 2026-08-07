@@ -1,0 +1,10 @@
+{{ $.Chart.Name }} has been installed. Check its status by running:
+
+  kubectl --namespace {{ $.Release.Namespace }} get pods -l "release={{ $.Release.Name }}"
+
+  kubectl --namespace {{ $.Release.Namespace }} get pods -l "app.kubernetes.io/instance={{ $.Release.Name }}"
+
+Get Grafana '{{ index .Values "kube-prometheus-stack" "grafana" "adminUser" }}' user password by running:
+
+  kubectl --namespace {{ $.Release.Namespace }} get secrets {{ $.Release.Name }}-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
+

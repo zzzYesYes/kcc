@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otelcol-prometheus-monitor
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    otelcol: "prometheus-otelcol"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otelcol-prometheus-collector
+      operator.opentelemetry.io/collector-service-type: base
+  endpoints:
+  - port: prometheus
+    interval: 15s
+    scrapeTimeout: 10s
+    path: /metrics
+    honorLabels: true

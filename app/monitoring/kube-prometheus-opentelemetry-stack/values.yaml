@@ -1,0 +1,24 @@
+kube-prometheus-stack:
+  grafana:
+    service:
+      type: NodePort
+      nodePort: 32000
+
+  prometheus:
+    service:
+      type: NodePort
+      nodePort: 30090
+    prometheusSpec:
+      serviceMonitorSelector:
+        matchLabels:
+          otelcol: "prometheus-otelcol"
+      podMonitorSelector:
+        matchLabels:
+          non-existent-label: "true"
+
+opentelemetry-operator:
+  admissionWebhooks:
+    create: false
+  manager:
+    env:
+      ENABLE_WEBHOOKS: "false"
