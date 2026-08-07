@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  annotations:
+  labels:
+    release: promotel
+  name: npu-exporter-sm
+  namespace: monitoring
+spec:
+  endpoints:
+  - interval: 30s
+    path: /metrics
+    port: metrics
+    relabelings:
+    - action: replace
+      sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node_name
+  namespaceSelector:
+    matchNames:
+    - npu-exporter
+  selector:
+    matchLabels:
+      app: npu-exporter

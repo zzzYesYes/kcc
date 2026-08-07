@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: npu-dashboard-configmap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  npu-dashboard.json: |-
+{{ .Files.Get "files/npu-dashboard.json" | indent 4 }}
