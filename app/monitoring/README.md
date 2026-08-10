@@ -15,6 +15,44 @@
 - Otelcol通过 TargetAllocator(ta) 读取 ServiceMonitor / PodMonitor 来感知原本由Prometheus抓取的采集目标，从而采集实际的指标数据
 - Prometheus修改为从otelcol中采集指标数据，并在Grafana中展示
 
+```mermaid
+flowchart LR
+    %% 控制/配置层 (Targets)
+    subgraph Targets_Group ["Targets / 配置组件"]
+        direction TB
+        promop["[prometheus-operator]"]
+        smon["[servicemonitor]"]
+        ta["[target-allocator]"]
+    end
+
+    %% 指标与采集层 (Metrics)
+    subgraph Metrics_Group ["Metrics / 数据流组件"]
+        direction TB
+        grafana["[grafana]"]
+        prom["[prometheus]"]
+        otelcol["[opentelemetry-collector]"]
+
+        subgraph Exporters ["Exporters"]
+            npu["[npu-exporter]"]
+            node["[prometheus-node-exporter]"]
+            ksm["[kube-state-metrics]"]
+        end
+    end
+
+    %% Targets 控制关系（虚线）
+    promop -.- smon
+    ta -.- smon
+    promop -.-|targets| prom
+    ta -.-|targets| otelcol
+
+    %% Metrics 数据流关系（实线）
+    grafana --> prom
+    prom -->|metrics| otelcol
+    otelcol -->|metrics| npu
+    otelcol -->|metrics| node
+    otelcol -->|metrics| ksm
+```
+
 ### 修改说明
 
 #### Chart.yaml
