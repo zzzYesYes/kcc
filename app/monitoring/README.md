@@ -12,7 +12,7 @@
 ### 架构说明
 
 在kube-prometheus-stack中添加OpenTelemetryCollector(otelcol)：
-- Otelcol通过 TargetAllocator(ta) 读取 Prometheus Operator 的 ServiceMonitor / PodMonitor 来感知原本由Prometheus抓取的采集目标，从而采集实际的指标数据
+- Otelcol通过 TargetAllocator(ta) 读取 ServiceMonitor / PodMonitor 来感知原本由Prometheus抓取的采集目标，从而采集实际的指标数据
 - Prometheus修改为从otelcol中采集指标数据，并在Grafana中展示
 
 ### 修改说明
@@ -48,7 +48,7 @@ ServiceAccount
 - 使OpenTelemetryCollector和TargetAllocator能够从K8s集群中读取相应的资源数据
 
 TargetAllocator
-- 通过release=`{{ .Release.Name }}`标签来匹配 Prometheus Operator 的 ServiceMonitor / PodMonitor
+- 通过release=`{{ .Release.Name }}`标签来匹配 Prometheus 的 ServiceMonitor / PodMonitor
 - 默认情况下，kube-prometheus-stack无法采集etcd/controller-manager/scheduler/proxy的指标数据，因此显式排除掉，避免otelcol日志打印大量采集失败的日志
 
 OpenTelemetryCollector
@@ -97,7 +97,8 @@ kubectl -n monitoring port-forward --address 0.0.0.0 pod/otelcol-prometheus-coll
 kubectl -n npu-exporter delete networkpolicy exporter-network-policy
 ```
 
-- 创建npu-exporter对应的ServiceMonitor，并在指标中设置`node_name`标签
+- 创建npu-exporter对应的ServiceMonitor，元数据中包含release=promotel标签，并在指标中设置`node_name`标签
+
 ```bash
 kubectl apply -f npu-exporter.yaml
 ```
