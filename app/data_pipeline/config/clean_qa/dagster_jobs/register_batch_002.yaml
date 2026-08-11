@@ -1,0 +1,10 @@
+ops:
+  validate_registration_config:
+    config:
+      batch_id: batch-002
+      input_bucket: k12-textbook-raw
+      input_prefix: source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z
+      output_bucket: k12-mineru-output
+      output_prefix: production/mineru/batch-002
+      ray_job_id: mineru-s3-all-20260717T072209Z
+      sample_size: 10

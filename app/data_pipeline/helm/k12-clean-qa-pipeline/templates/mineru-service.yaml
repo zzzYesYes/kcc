@@ -1,0 +1,21 @@
+{{- if and .Values.mineru.enabled .Values.mineru.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "k12-clean-qa.mineruName" . }}
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mineru-worker
+spec:
+  type: {{ .Values.mineru.service.type }}
+  selector:
+    k12.ai/workload: {{ include "k12-clean-qa.mineruName" . }}
+  ports:
+    {{- range .Values.mineru.servers }}
+    - name: {{ printf "http-%s" .id | trunc 15 | quote }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: TCP
+    {{- end }}
+{{- end }}

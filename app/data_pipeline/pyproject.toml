@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kcc-k12-data-pipeline"
+version = "0.2.0"
+description = "K12 data-lake tools and textbook cleaning/QA production pipeline"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "boto3>=1.34,<2",
+  "botocore>=1.34,<2",
+  "daft==0.7.19",
+  "dagster==1.13.13",
+  "dagster-webserver==1.13.13",
+  "Pillow>=10,<12",
+  "pyarrow>=16,<22",
+  "pypdfium2>=4,<5",
+  "PyYAML>=6,<7",
+  "ray[default]==2.48.0",
+  "requests>=2.31,<3",
+  "zstandard>=0.22,<1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+k12-s3-smoke = "data_lake.data_pipeline_tools.s3_smoke:main"
+k12-full-ingest = "data_lake.k12_ingest.full_ingest:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"clean_qa.k12_clean_qa_pipeline" = [
+  "configs/*.json",
+  "configs/*.yaml",
+  "manifests/*.json",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = [
+  "src/clean_qa/k12_clean_qa_pipeline/common/tests",
+  "src/clean_qa/k12_clean_qa_pipeline/stage1_clean/tests",
+  "src/clean_qa/k12_clean_qa_pipeline/stage2_qa/tests",
+]

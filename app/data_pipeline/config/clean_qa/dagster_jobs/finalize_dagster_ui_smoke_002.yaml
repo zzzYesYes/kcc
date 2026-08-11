@@ -1,0 +1,5 @@
+ops:
+  load_submission_state:
+    config:
+      batch_id: dagster-ui-smoke-002
+      output_bucket: k12-mineru-output

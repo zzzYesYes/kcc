@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dagster-qwen-ops.fullname" . }}-dagster
+  namespace: {{ include "dagster-qwen-ops.namespace" . }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" . | nindent 4 }}
+data:
+  dagster.yaml: |
+    storage:
+      sqlite:
+        base_dir: {{ .Values.dagster.dagsterHome }}/storage
+    compute_logs:
+      module: dagster.core.storage.local_compute_log_manager
+      class: LocalComputeLogManager
+      config:
+        base_dir: {{ .Values.dagster.dagsterHome }}/compute_logs
+    run_coordinator:
+      module: dagster.core.run_coordinator
+      class: QueuedRunCoordinator
+    run_launcher:
+      module: dagster.core.launcher
+      class: DefaultRunLauncher
+{{- range $key, $worker := .Values.workers }}
+{{- if $worker.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dagster-qwen-ops.workerName" (dict "root" $ "worker" $worker "key" $key) }}-launcher
+  namespace: {{ include "dagster-qwen-ops.namespace" $ }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: qwen-worker
+data:
+  start-qwen.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source /usr/local/Ascend/driver/bin/setenv.bash 2>/dev/null || true
+    source /usr/local/Ascend/ascend-toolkit/set_env.sh 2>/dev/null || true
+    export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+    export HCCL_OP_EXPANSION_MODE=AIV
+    export HCCL_BUFFSIZE=1024
+    export TASK_QUEUE_ENABLE=1
+    pids=()
+    stop_all() {
+      if ((${#pids[@]})); then
+        kill "${pids[@]}" 2>/dev/null || true
+        wait "${pids[@]}" 2>/dev/null || true
+      fi
+    }
+    trap stop_all EXIT INT TERM
+    launch_service() {
+      local id=$1 devices=$2 port=$3 cpu_set=$4
+      local -a auth_args=() prefix_args=() async_args=()
+      if [[ -n "${QWEN_API_KEY:-}" ]]; then auth_args+=(--api-key "$QWEN_API_KEY"); fi
+{{- if $worker.runtime.enablePrefixCaching }}
+      prefix_args+=(--enable-prefix-caching)
+{{- else }}
+      prefix_args+=(--no-enable-prefix-caching)
+{{- end }}
+{{- if $worker.runtime.asyncScheduling }}
+      async_args+=(--async-scheduling)
+{{- else }}
+      async_args+=(--no-async-scheduling)
+{{- end }}
+      (
+        export ASCEND_VISIBLE_DEVICES="$devices"
+        export ASCEND_RT_VISIBLE_DEVICES="$devices"
+        export VLLM_CACHE_ROOT="/tmp/vllm-cache-$port"
+        export XDG_CACHE_HOME="/tmp/xdg-cache-$port"
+        exec taskset -c "$cpu_set" vllm serve {{ $worker.modelPath | quote }} \
+          --host 0.0.0.0 --port "$port" \
+          --served-model-name {{ $worker.modelName | quote }} \
+          --tensor-parallel-size {{ $worker.tensorParallelSize }} \
+          --data-parallel-size {{ $worker.dataParallelSize }} \
+{{- if $worker.runtime.enableExpertParallel }}
+          --enable-expert-parallel \
+{{- end }}
+          --quantization {{ $worker.runtime.quantization | quote }} \
+          --dtype {{ $worker.runtime.dtype | quote }} \
+          --max-model-len {{ $worker.runtime.maxModelLen }} \
+          --max-num-seqs {{ $worker.runtime.maxNumSeqs }} \
+          --max-num-batched-tokens {{ $worker.runtime.maxNumBatchedTokens }} \
+          --gpu-memory-utilization {{ $worker.runtime.gpuMemoryUtilization }} \
+{{- if $worker.runtime.trustRemoteCode }}
+          --trust-remote-code \
+{{- end }}
+          "${prefix_args[@]}" "${async_args[@]}" "${auth_args[@]}" \
+          --compilation-config {{ $worker.runtime.compilationConfig | quote }} \
+{{- range $worker.runtime.extraArgs }}
+          {{ . | quote }} \
+{{- end }}
+          --additional-config {{ $worker.runtime.additionalConfig | quote }}
+      ) >"/tmp/qwen-vllm-$port.log" 2>&1 &
+      pids+=("$!")
+      echo "Started Qwen endpoint=$id devices=$devices port=$port pid=$!"
+    }
+{{- range $worker.endpoints }}
+    launch_service {{ .id | quote }} {{ .devices | quote }} {{ .port }} {{ .cpuSet | quote }}
+{{- end }}
+    set +e
+    wait -n "${pids[@]}"
+    status=$?
+    set -e
+    echo "A Qwen endpoint exited with status $status" >&2
+    exit "$status"
+{{- end }}
+{{- end }}

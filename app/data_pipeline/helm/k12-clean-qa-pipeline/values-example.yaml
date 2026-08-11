@@ -1,0 +1,40 @@
+# Copy this file outside source control and replace environment-specific values.
+global:
+  namespaceOverride: k12
+
+externalS3:
+  endpoint: http://minio.storage.svc.cluster.local:9000
+  credentialsSecret:
+    name: k12-pipeline-s3
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+
+dagster:
+  image:
+    repository: registry.example.com/k12/data-pipeline
+    tag: stage2-v1.1.0
+  storage:
+    type: pvc
+    existingClaim: k12-dagster-home
+
+ray:
+  head:
+    image:
+      repository: registry.example.com/k12/ray-data
+      tag: ray2.48.0-daft0.7.19
+
+mineru:
+  image:
+    repository: registry.example.com/k12/mineru-worker
+    tag: mineru3.4-hybrid
+
+qwen:
+  image:
+    repository: registry.example.com/k12/qwen-vllm-ascend
+    tag: qwen3.6-35b-a3b-w8a8
+
+models:
+  qwen:
+    volumeType: pvc
+    existingClaim: qwen-models
+    subPath: Qwen3.6-35B-A3B-w8a8

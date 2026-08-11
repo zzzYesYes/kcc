@@ -1,0 +1,9 @@
+ops:
+  configure_qwen_vllm:
+    config:
+      action: status
+      max_model_len: 32768
+      max_num_seqs: 8
+      max_num_batched_tokens: 4096
+      gpu_memory_utilization: 0.85
+      startup_timeout_seconds: 1800

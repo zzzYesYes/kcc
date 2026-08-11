@@ -1,0 +1,10 @@
+{{- if and .Values.minio.enabled .Values.minio.createNamespace (ne .Values.minio.namespace .Release.Namespace) }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.minio.namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "data-lake.labels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,21 @@
+{{- if and .Values.qwen.enabled .Values.qwen.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "k12-clean-qa.qwenName" . }}
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qwen-worker
+spec:
+  type: {{ .Values.qwen.service.type }}
+  selector:
+    k12.ai/workload: {{ include "k12-clean-qa.qwenName" . }}
+  ports:
+    {{- range .Values.qwen.endpoints }}
+    - name: {{ .id | lower | replace "_" "-" | trunc 15 | quote }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: TCP
+    {{- end }}
+{{- end }}

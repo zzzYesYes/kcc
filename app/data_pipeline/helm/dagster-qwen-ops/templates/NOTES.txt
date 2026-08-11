@@ -1,0 +1,9 @@
+Dagster Qwen Ops is installed in namespace {{ include "dagster-qwen-ops.namespace" . }}.
+
+Worker Deployments are scale-to-zero by default. Open Dagster and run:
+  qwen_vllm_lifecycle_job      action=start|status|restart|stop
+  qwen_vllm_8npulifecycle_job action=start|status|restart|stop
+  qwen_chat_job               target=standard|eight_npu
+
+Port-forward the UI:
+  kubectl -n {{ include "dagster-qwen-ops.namespace" . }} port-forward svc/{{ include "dagster-qwen-ops.fullname" . }}-dagster 3000:{{ .Values.dagster.service.port }}

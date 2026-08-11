@@ -1,0 +1,5 @@
+MinIO API: {{ include "data-lake.minioName" . }}.{{ .Values.minio.namespace }}.svc:9000
+MinIO Console service port: 9001
+The {{ .Values.minio.persistence.size }} PVC is retained by the StatefulSet retention policy.
+Credentials are read from Secret {{ .Values.credentials.existingSecret }}.
+This chart does not install Dagster, Ray, MinerU, or Qwen resources.

@@ -1,0 +1,171 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: false
+  nameOverride: ""
+
+global:
+  imagePullSecrets: []
+  labels: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+apiAuth:
+  # Optional existing Secret shared by Dagster and vLLM. The key must contain
+  # the plain vLLM API key; the Chart never creates or embeds credentials.
+  existingSecret: ""
+  key: api-key
+
+dagster:
+  image:
+    repository: registry.example.com/ai/dagster-qwen-ops
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 3000
+    nodePort: null
+  dagsterHome: /opt/dagster/home
+  storage:
+    type: emptyDir
+    existingClaim: ""
+    sizeLimit: 2Gi
+  resources:
+    requests: {cpu: "500m", memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+ascend:
+  resourceName: huawei.com/Ascend910
+  deviceAnnotation:
+    enabled: false
+    key: huawei.com/Ascend910
+    prefix: Ascend910-
+  securityContext:
+    privileged: true
+  hostMounts:
+    enabled: false
+    driverPath: /usr/local/Ascend/driver
+    dcmiPath: /usr/local/dcmi
+    npuSmiPath: /usr/local/bin/npu-smi
+
+modelVolume:
+  type: pvc
+  existingClaim: qwen-model-pvc
+  hostPath: /srv/models/qwen
+  mountPath: /models/qwen
+  subPath: ""
+
+proxy:
+  httpProxy: ""
+  httpsProxy: ""
+  noProxy: "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc"
+
+workers:
+  standard:
+    enabled: true
+    nameSuffix: qwen
+    replicas: 0
+    image:
+      repository: registry.example.com/ai/qwen-vllm-ascend
+      tag: latest
+      pullPolicy: IfNotPresent
+    modelPath: /models/qwen
+    modelName: qwen-model
+    npuCount: 2
+    physicalDevices: [0, 1]
+    tensorParallelSize: 2
+    dataParallelSize: 1
+    endpoints:
+      - id: qwen
+        devices: "0,1"
+        port: 8000
+        cpuSet: "0-15"
+    resources:
+      requests: {cpu: "16", memory: 64Gi}
+      limits: {cpu: "16", memory: 64Gi}
+    sharedMemorySize: 16Gi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    runtime:
+      apiBaseUrl: ""
+      healthPath: /health
+      modelsPath: /v1/models
+      chatPath: /v1/chat/completions
+      startupTimeoutSeconds: 1800
+      shutdownTimeoutSeconds: 300
+      pollIntervalSeconds: 5
+      chatTimeoutSeconds: 300
+      maxModelLen: 32768
+      maxNumSeqs: 8
+      maxNumBatchedTokens: 4096
+      gpuMemoryUtilization: 0.85
+      quantization: ascend
+      dtype: bfloat16
+      trustRemoteCode: true
+      enableExpertParallel: true
+      enablePrefixCaching: false
+      asyncScheduling: false
+      compilationConfig: '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      additionalConfig: '{"enable_cpu_binding":true}'
+      extraArgs: []
+  eightNpu:
+    enabled: true
+    nameSuffix: qwen-8npu
+    replicas: 0
+    image:
+      repository: registry.example.com/ai/qwen-vllm-ascend
+      tag: latest
+      pullPolicy: IfNotPresent
+    modelPath: /models/qwen
+    modelName: qwen-model
+    npuCount: 8
+    physicalDevices: [0, 1, 2, 3, 4, 5, 6, 7]
+    tensorParallelSize: 2
+    dataParallelSize: 1
+    endpoints:
+      - {id: qwen-a, devices: "0,1", port: 8000, cpuSet: "0-15"}
+      - {id: qwen-b, devices: "2,3", port: 8001, cpuSet: "16-31"}
+      - {id: qwen-c, devices: "4,5", port: 8002, cpuSet: "32-47"}
+      - {id: qwen-d, devices: "6,7", port: 8003, cpuSet: "48-63"}
+    resources:
+      requests: {cpu: "64", memory: 256Gi}
+      limits: {cpu: "64", memory: 256Gi}
+    sharedMemorySize: 64Gi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    runtime:
+      apiBaseUrl: ""
+      healthPath: /health
+      modelsPath: /v1/models
+      chatPath: /v1/chat/completions
+      startupTimeoutSeconds: 1800
+      shutdownTimeoutSeconds: 300
+      pollIntervalSeconds: 5
+      chatTimeoutSeconds: 300
+      maxModelLen: 32768
+      maxNumSeqs: 8
+      maxNumBatchedTokens: 4096
+      gpuMemoryUtilization: 0.85
+      quantization: ascend
+      dtype: bfloat16
+      trustRemoteCode: true
+      enableExpertParallel: true
+      enablePrefixCaching: false
+      asyncScheduling: false
+      compilationConfig: '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      additionalConfig: '{"enable_cpu_binding":true}'
+      extraArgs: []

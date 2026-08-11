@@ -1,0 +1,237 @@
+{{- if .Values.ray.enabled }}
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: {{ include "k12-clean-qa.rayClusterName" . }}
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ray
+spec:
+  rayVersion: {{ .Values.ray.version | quote }}
+  enableInTreeAutoscaling: {{ .Values.ray.enableInTreeAutoscaling }}
+  autoscalerOptions:
+    idleTimeoutSeconds: {{ .Values.ray.idleTimeoutSeconds }}
+  headGroupSpec:
+    serviceType: ClusterIP
+    rayStartParams:
+      {{- toYaml .Values.ray.head.rayStartParams | nindent 6 }}
+    template:
+      metadata:
+        labels:
+          {{- include "k12-clean-qa.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: ray-head
+      spec:
+        serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+        {{- include "k12-clean-qa.imagePullSecrets" . | nindent 8 }}
+        containers:
+          - name: ray-head
+            image: "{{ .Values.ray.head.image.repository }}:{{ .Values.ray.head.image.tag }}"
+            imagePullPolicy: {{ .Values.ray.head.image.pullPolicy }}
+            env:
+              {{- include "k12-clean-qa.s3Env" . | nindent 14 }}
+              {{- include "k12-clean-qa.proxyEnv" . | nindent 14 }}
+            ports:
+              - {name: client, containerPort: {{ .Values.ray.head.service.clientPort }}}
+              - {name: dashboard, containerPort: {{ .Values.ray.head.service.dashboardPort }}}
+            resources:
+              {{- toYaml .Values.ray.head.resources | nindent 14 }}
+            volumeMounts:
+              - {name: ray-logs, mountPath: /tmp/ray}
+        volumes:
+          - name: ray-logs
+            emptyDir: {}
+        nodeSelector:
+          {{- toYaml .Values.ray.head.nodeSelector | nindent 10 }}
+        affinity:
+          {{- toYaml .Values.ray.head.affinity | nindent 10 }}
+        tolerations:
+          {{- toYaml .Values.ray.head.tolerations | nindent 10 }}
+  workerGroupSpecs:
+    {{- if .Values.ray.cpuWorker.enabled }}
+    - groupName: {{ .Values.ray.cpuWorker.groupName }}
+      replicas: {{ .Values.ray.cpuWorker.replicas }}
+      minReplicas: {{ .Values.ray.cpuWorker.minReplicas }}
+      maxReplicas: {{ .Values.ray.cpuWorker.maxReplicas }}
+      rayStartParams:
+        num-cpus: {{ index .Values.ray.cpuWorker.rayStartParams "num-cpus" | quote }}
+        resources: {{ index .Values.ray.cpuWorker.rayStartParams "resources" | quote }}
+      template:
+        metadata:
+          labels:
+            {{- include "k12-clean-qa.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: cpu-worker
+        spec:
+          serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+          {{- include "k12-clean-qa.imagePullSecrets" . | nindent 10 }}
+          containers:
+            - name: ray-worker
+              image: "{{ .Values.ray.head.image.repository }}:{{ .Values.ray.head.image.tag }}"
+              imagePullPolicy: {{ .Values.ray.head.image.pullPolicy }}
+              env:
+                {{- include "k12-clean-qa.s3Env" . | nindent 16 }}
+                {{- include "k12-clean-qa.proxyEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.ray.cpuWorker.resources | nindent 16 }}
+              volumeMounts:
+                - {name: ray-logs, mountPath: /tmp/ray}
+          volumes:
+            - name: ray-logs
+              emptyDir: {}
+          nodeSelector:
+            {{- toYaml .Values.ray.cpuWorker.nodeSelector | nindent 12 }}
+          affinity:
+            {{- toYaml .Values.ray.cpuWorker.affinity | nindent 12 }}
+          tolerations:
+            {{- toYaml .Values.ray.cpuWorker.tolerations | nindent 12 }}
+    {{- end }}
+    {{- if and .Values.mineru.enabled .Values.mineru.rayWorkerGroupEnabled }}
+    - groupName: {{ .Values.mineru.groupName }}
+      replicas: {{ .Values.mineru.replicas }}
+      minReplicas: {{ .Values.mineru.minReplicas }}
+      maxReplicas: {{ .Values.mineru.maxReplicas }}
+      rayStartParams:
+        num-cpus: {{ .Values.mineru.resources.requests.cpu | quote }}
+        resources: {{ .Values.mineru.rayResources | toJson | quote }}
+      template:
+        metadata:
+          annotations:
+            huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" .Values.mineru.physicalDevices | quote }}
+            predicate-time: "1"
+            ray.io/overwrite-container-cmd: "true"
+          labels:
+            {{- include "k12-clean-qa.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: mineru-worker
+        spec:
+          serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+          {{- include "k12-clean-qa.imagePullSecrets" . | nindent 10 }}
+          containers:
+            - name: ray-worker
+              image: "{{ .Values.mineru.image.repository }}:{{ .Values.mineru.image.tag }}"
+              imagePullPolicy: {{ .Values.mineru.image.pullPolicy }}
+              command: ["/bin/bash", "-lc", "--"]
+              args: ["exec /opt/k12-launcher/start_mineru.sh"]
+              env:
+                - name: MINERU_PHYSICAL_DEVICES
+                  value: {{ join "," .Values.mineru.physicalDevices | quote }}
+                - name: TORCH_DEVICE_BACKEND_AUTOLOAD
+                  value: "0"
+                {{- include "k12-clean-qa.s3Env" . | nindent 16 }}
+                {{- include "k12-clean-qa.proxyEnv" . | nindent 16 }}
+              resources:
+                requests:
+                  cpu: {{ .Values.mineru.resources.requests.cpu | quote }}
+                  memory: {{ .Values.mineru.resources.requests.memory }}
+                  {{ .Values.ascend.resourceName }}: {{ .Values.mineru.npuCount | quote }}
+                limits:
+                  cpu: {{ .Values.mineru.resources.limits.cpu | quote }}
+                  memory: {{ .Values.mineru.resources.limits.memory }}
+                  {{ .Values.ascend.resourceName }}: {{ .Values.mineru.npuCount | quote }}
+              securityContext:
+                {{- toYaml .Values.ascend.securityContext | nindent 16 }}
+              volumeMounts:
+                - {name: ray-logs, mountPath: /tmp/ray}
+                - {name: shared-memory, mountPath: /dev/shm}
+                - {name: mineru-launcher, mountPath: /opt/k12-launcher, readOnly: true}
+                {{- include "k12-clean-qa.ascendVolumeMounts" . | nindent 16 }}
+          volumes:
+            - name: ray-logs
+              emptyDir: {}
+            - name: shared-memory
+              emptyDir: {medium: Memory, sizeLimit: {{ .Values.mineru.sharedMemorySize }}}
+            - name: mineru-launcher
+              configMap:
+                name: {{ include "k12-clean-qa.mineruName" . }}-launcher
+                defaultMode: 0555
+            {{- include "k12-clean-qa.ascendVolumes" . | nindent 12 }}
+          nodeSelector:
+            {{- toYaml (mergeOverwrite (deepCopy .Values.ascend.nodeSelector) .Values.mineru.nodeSelector) | nindent 12 }}
+          affinity:
+            {{- toYaml .Values.mineru.affinity | nindent 12 }}
+          tolerations:
+            {{- toYaml (concat .Values.ascend.tolerations .Values.mineru.tolerations) | nindent 12 }}
+    {{- end }}
+    {{- if and .Values.qwen.enabled .Values.qwen.rayWorkerGroupsEnabled }}
+    {{- range $group := .Values.qwen.rayWorkerGroups }}
+    - groupName: {{ $group.name }}
+      replicas: {{ $.Values.qwen.replicas }}
+      minReplicas: {{ $.Values.qwen.minReplicas }}
+      maxReplicas: {{ $.Values.qwen.maxReplicas }}
+      rayStartParams:
+        num-cpus: {{ $.Values.qwen.resources.rayBridge.requests.cpu | quote }}
+        resources: {{ dict "qa_vllm_npu" (len $group.physicalDevices) | toJson | quote }}
+      template:
+        metadata:
+          annotations:
+            huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" $group.physicalDevices | quote }}
+            predicate-time: "1"
+          labels:
+            {{- include "k12-clean-qa.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: qwen-worker
+            k12.ai/qwen-group: {{ $group.name | quote }}
+        spec:
+          serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" $ }}
+          {{- include "k12-clean-qa.imagePullSecrets" $ | nindent 10 }}
+          containers:
+            - name: ray-worker
+              image: "{{ $.Values.ray.head.image.repository }}:{{ $.Values.ray.head.image.tag }}"
+              imagePullPolicy: {{ $.Values.ray.head.image.pullPolicy }}
+              env:
+                {{- include "k12-clean-qa.s3Env" $ | nindent 16 }}
+                {{- include "k12-clean-qa.proxyEnv" $ | nindent 16 }}
+              resources:
+                {{- toYaml $.Values.qwen.resources.rayBridge | nindent 16 }}
+              volumeMounts:
+                - {name: ray-logs, mountPath: /tmp/ray}
+                - {name: shared-memory, mountPath: /dev/shm}
+            - name: vllm-ascend
+              image: "{{ $.Values.qwen.image.repository }}:{{ $.Values.qwen.image.tag }}"
+              imagePullPolicy: {{ $.Values.qwen.image.pullPolicy }}
+              command: ["/bin/bash", "-lc", "--"]
+              args: ["exec /opt/k12-launcher/start_qwen.sh"]
+              env:
+                - name: QWEN_ENDPOINT_SPECS
+                  value: {{ include "k12-clean-qa.endpointSpecs" $group.endpoints | quote }}
+                {{- include "k12-clean-qa.proxyEnv" $ | nindent 16 }}
+              resources:
+                requests:
+                  cpu: {{ $.Values.qwen.resources.vllm.requests.cpu | quote }}
+                  memory: {{ $.Values.qwen.resources.vllm.requests.memory }}
+                  {{ $.Values.ascend.resourceName }}: {{ len $group.physicalDevices | quote }}
+                limits:
+                  cpu: {{ $.Values.qwen.resources.vllm.limits.cpu | quote }}
+                  memory: {{ $.Values.qwen.resources.vllm.limits.memory }}
+                  {{ $.Values.ascend.resourceName }}: {{ len $group.physicalDevices | quote }}
+              securityContext:
+                {{- toYaml $.Values.ascend.securityContext | nindent 16 }}
+              volumeMounts:
+                - name: model-weights
+                  mountPath: {{ $.Values.models.qwen.mountPath }}
+                  {{- with $.Values.models.qwen.subPath }}
+                  subPath: {{ . }}
+                  {{- end }}
+                  readOnly: true
+                - {name: shared-memory, mountPath: /dev/shm}
+                - {name: qwen-launcher, mountPath: /opt/k12-launcher, readOnly: true}
+                {{- include "k12-clean-qa.ascendVolumeMounts" $ | nindent 16 }}
+          volumes:
+            - name: ray-logs
+              emptyDir: {}
+            - name: shared-memory
+              emptyDir: {medium: Memory, sizeLimit: {{ $.Values.qwen.sharedMemorySize }}}
+            - name: model-weights
+              {{- include "k12-clean-qa.qwenModelVolume" $ | nindent 14 }}
+            - name: qwen-launcher
+              configMap:
+                name: {{ include "k12-clean-qa.qwenName" $ }}-launcher
+                defaultMode: 0555
+            {{- include "k12-clean-qa.ascendVolumes" $ | nindent 12 }}
+          nodeSelector:
+            {{- toYaml (mergeOverwrite (deepCopy $.Values.ascend.nodeSelector) $.Values.qwen.nodeSelector) | nindent 12 }}
+          affinity:
+            {{- toYaml $.Values.qwen.affinity | nindent 12 }}
+          tolerations:
+            {{- toYaml (concat $.Values.ascend.tolerations $.Values.qwen.tolerations) | nindent 12 }}
+    {{- end }}
+    {{- end }}
+{{- end }}

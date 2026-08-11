@@ -1,0 +1,61 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "k12-clean-qa.fullname" . }}-lifecycle
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - {{ include "k12-clean-qa.mineruName" . }}-launcher
+      - {{ include "k12-clean-qa.qwenName" . }}-launcher
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames:
+      - {{ include "k12-clean-qa.mineruName" . }}
+      - {{ include "k12-clean-qa.qwenName" . }}
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames:
+      - {{ include "k12-clean-qa.mineruName" . }}
+      - {{ include "k12-clean-qa.qwenName" . }}
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters", "rayclusters/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    resourceNames:
+      - {{ include "k12-clean-qa.rayClusterName" . }}
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "k12-clean-qa.fullname" . }}-lifecycle
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "k12-clean-qa.serviceAccountName" . }}
+    namespace: {{ include "k12-clean-qa.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "k12-clean-qa.fullname" . }}-lifecycle
+{{- end }}

@@ -1,0 +1,135 @@
+{{- if .Values.dagster.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k12-clean-qa.fullname" . }}-dagster
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dagster
+spec:
+  replicas: {{ .Values.dagster.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "k12-clean-qa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dagster
+  template:
+    metadata:
+      labels:
+        {{- include "k12-clean-qa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dagster
+    spec:
+      serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+      {{- include "k12-clean-qa.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: webserver
+          image: "{{ .Values.dagster.image.repository }}:{{ .Values.dagster.image.tag }}"
+          imagePullPolicy: {{ .Values.dagster.image.pullPolicy }}
+          command: ["dagster-webserver"]
+          args:
+            - -h
+            - 0.0.0.0
+            - -p
+            - {{ .Values.dagster.service.port | quote }}
+            - -m
+            - clean_qa.mineru_dagster.definitions
+          ports:
+            - name: http
+              containerPort: {{ .Values.dagster.service.port }}
+          env: &dagsterEnv
+            - name: DAGSTER_HOME
+              value: {{ .Values.dagster.dagsterHome | quote }}
+            - name: PIPELINE_WORKING_DIR
+              value: {{ .Values.dagster.workingDir | quote }}
+            - name: PIPELINE_NO_PROXY
+              value: {{ .Values.proxy.noProxy | quote }}
+            - name: RAY_DASHBOARD_ADDRESS
+              value: "http://{{ include "k12-clean-qa.rayHeadService" . }}.{{ include "k12-clean-qa.namespace" . }}.svc.cluster.local:{{ .Values.ray.head.service.dashboardPort }}"
+            - name: AUTOSCALE_RAY_DASHBOARD_ADDRESS
+              value: "http://{{ include "k12-clean-qa.rayHeadService" . }}.{{ include "k12-clean-qa.namespace" . }}.svc.cluster.local:{{ .Values.ray.head.service.dashboardPort }}"
+            - name: QWEN_NAMESPACE
+              value: {{ include "k12-clean-qa.namespace" . | quote }}
+            - name: QWEN_DEPLOYMENT_NAME
+              value: {{ include "k12-clean-qa.qwenName" . | quote }}
+            - name: QWEN_CONFIGMAP_NAME
+              value: {{ printf "%s-launcher" (include "k12-clean-qa.qwenName" .) | quote }}
+            - name: QWEN_SERVICE_NAME
+              value: {{ include "k12-clean-qa.qwenName" . | quote }}
+            - name: QWEN_POD_LABEL
+              value: {{ include "k12-clean-qa.qwenName" . | quote }}
+            - name: QWEN_POD_LABEL_KEY
+              value: k12.ai/workload
+            - name: QWEN_SERVICE_COUNT
+              value: {{ len .Values.qwen.endpoints | quote }}
+            - name: QWEN_ENDPOINT_SPECS
+              value: {{ include "k12-clean-qa.endpointSpecs" .Values.qwen.endpoints | quote }}
+            - name: QWEN_TENSOR_PARALLEL_SIZE
+              value: {{ .Values.qwen.tensorParallelSize | quote }}
+            - name: QWEN_DATA_PARALLEL_SIZE
+              value: {{ .Values.qwen.dataParallelSize | quote }}
+            - name: QWEN_MODEL_PATH
+              value: {{ .Values.qwen.modelPath | quote }}
+            - name: QWEN_MODEL_NAME
+              value: {{ .Values.qwen.modelName | quote }}
+            - name: QWEN_BASE_PORT
+              value: {{ (index .Values.qwen.endpoints 0).port | quote }}
+            - name: QWEN_API_BASE
+              value: "http://{{ include "k12-clean-qa.qwenName" . }}.{{ include "k12-clean-qa.namespace" . }}.svc.cluster.local:{{ (index .Values.qwen.endpoints 0).port }}"
+            {{- include "k12-clean-qa.s3Env" . | nindent 12 }}
+            {{- include "k12-clean-qa.proxyEnv" . | nindent 12 }}
+            {{- with .Values.dagster.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts: &dagsterVolumeMounts
+            - name: dagster-home
+              mountPath: {{ .Values.dagster.dagsterHome }}
+            - name: config
+              mountPath: /opt/data-pipeline/config/helm
+              readOnly: true
+            - name: config
+              mountPath: {{ .Values.dagster.dagsterHome }}/dagster.yaml
+              subPath: dagster.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /server_info
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.dagster.resources | nindent 12 }}
+        - name: daemon
+          image: "{{ .Values.dagster.image.repository }}:{{ .Values.dagster.image.tag }}"
+          imagePullPolicy: {{ .Values.dagster.image.pullPolicy }}
+          command: ["dagster-daemon", "run", "-m", "clean_qa.mineru_dagster.definitions"]
+          env: *dagsterEnv
+          volumeMounts: *dagsterVolumeMounts
+          resources:
+            {{- toYaml .Values.dagster.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "k12-clean-qa.fullname" . }}-config
+        - name: dagster-home
+          {{- if eq .Values.dagster.storage.type "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ required "dagster.storage.existingClaim is required for PVC storage" .Values.dagster.storage.existingClaim | quote }}
+          {{- else if eq .Values.dagster.storage.type "hostPath" }}
+          hostPath:
+            path: {{ required "dagster.storage.hostPath is required for hostPath storage" .Values.dagster.storage.hostPath | quote }}
+            type: DirectoryOrCreate
+          {{- else }}
+          emptyDir:
+            {{- with .Values.dagster.storage.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+          {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.dagster.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.dagster.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.dagster.tolerations | nindent 8 }}
+{{- end }}

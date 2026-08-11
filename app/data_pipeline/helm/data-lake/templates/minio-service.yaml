@@ -1,0 +1,48 @@
+{{- if .Values.minio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "data-lake.minioName" . }}-headless
+  namespace: {{ .Values.minio.namespace }}
+  labels:
+    {{- include "data-lake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "data-lake.minioName" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "data-lake.minioName" . }}
+  namespace: {{ .Values.minio.namespace }}
+  labels:
+    {{- include "data-lake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  type: {{ .Values.minio.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "data-lake.minioName" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: api
+      {{- if and (eq .Values.minio.service.type "NodePort") .Values.minio.service.apiNodePort }}
+      nodePort: {{ .Values.minio.service.apiNodePort }}
+      {{- end }}
+    - name: console
+      port: 9001
+      targetPort: console
+      {{- if and (eq .Values.minio.service.type "NodePort") .Values.minio.service.consoleNodePort }}
+      nodePort: {{ .Values.minio.service.consoleNodePort }}
+      {{- end }}
+{{- end }}

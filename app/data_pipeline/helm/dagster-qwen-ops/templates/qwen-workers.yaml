@@ -1,0 +1,129 @@
+{{- range $key, $worker := .Values.workers }}
+{{- if $worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dagster-qwen-ops.workerName" (dict "root" $ "worker" $worker "key" $key) }}
+  namespace: {{ include "dagster-qwen-ops.namespace" $ }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ printf "qwen-worker-%s" $key | quote }}
+  {{- if $.Values.ascend.deviceAnnotation.enabled }}
+  annotations:
+    {{ $.Values.ascend.deviceAnnotation.key }}: {{ include "dagster-qwen-ops.deviceAnnotation" (dict "root" $ "devices" $worker.physicalDevices) | quote }}
+  {{- end }}
+spec:
+  replicas: {{ $worker.replicas }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "dagster-qwen-ops.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ printf "qwen-worker-%s" $key | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "dagster-qwen-ops.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ printf "qwen-worker-%s" $key | quote }}
+      {{- if $.Values.ascend.deviceAnnotation.enabled }}
+      annotations:
+        {{ $.Values.ascend.deviceAnnotation.key }}: {{ include "dagster-qwen-ops.deviceAnnotation" (dict "root" $ "devices" $worker.physicalDevices) | quote }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "dagster-qwen-ops.imagePullSecrets" $ | nindent 6 }}
+      containers:
+        - name: vllm-ascend
+          image: {{ printf "%s:%s" $worker.image.repository $worker.image.tag | quote }}
+          imagePullPolicy: {{ $worker.image.pullPolicy }}
+          command: ["/bin/bash", "-lc", "--"]
+          args: ["exec /opt/dagster-qwen-ops/start-qwen.sh"]
+          env:
+            {{- include "dagster-qwen-ops.proxyEnv" $ | nindent 12 }}
+            {{- if $.Values.apiAuth.existingSecret }}
+            - name: QWEN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.apiAuth.existingSecret | quote }}
+                  key: {{ $.Values.apiAuth.key | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ $worker.resources.requests.cpu | quote }}
+              memory: {{ $worker.resources.requests.memory }}
+              {{ $.Values.ascend.resourceName }}: {{ $worker.npuCount | quote }}
+            limits:
+              cpu: {{ $worker.resources.limits.cpu | quote }}
+              memory: {{ $worker.resources.limits.memory }}
+              {{ $.Values.ascend.resourceName }}: {{ $worker.npuCount | quote }}
+          securityContext:
+            {{- toYaml $.Values.ascend.securityContext | nindent 12 }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -lc
+                - {{ include "dagster-qwen-ops.healthCommand" (dict "worker" $worker) | quote }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: {{ div $worker.runtime.startupTimeoutSeconds 10 }}
+          volumeMounts:
+            - name: model-weights
+              mountPath: {{ $.Values.modelVolume.mountPath | quote }}
+              {{- with $.Values.modelVolume.subPath }}
+              subPath: {{ . | quote }}
+              {{- end }}
+              readOnly: true
+            - {name: launcher, mountPath: /opt/dagster-qwen-ops, readOnly: true}
+            - {name: shared-memory, mountPath: /dev/shm}
+            {{- if $.Values.ascend.hostMounts.enabled }}
+            - {name: ascend-driver, mountPath: /usr/local/Ascend/driver, readOnly: true}
+            - {name: ascend-dcmi, mountPath: /usr/local/dcmi, readOnly: true}
+            - {name: npu-smi, mountPath: /usr/local/bin/npu-smi, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: model-weights
+          {{- include "dagster-qwen-ops.modelVolume" $ | nindent 10 }}
+        - name: launcher
+          configMap:
+            name: {{ include "dagster-qwen-ops.workerName" (dict "root" $ "worker" $worker "key" $key) }}-launcher
+            defaultMode: 0555
+        - name: shared-memory
+          emptyDir: {medium: Memory, sizeLimit: {{ $worker.sharedMemorySize }}}
+        {{- if $.Values.ascend.hostMounts.enabled }}
+        - name: ascend-driver
+          hostPath: {path: {{ $.Values.ascend.hostMounts.driverPath | quote }}, type: Directory}
+        - name: ascend-dcmi
+          hostPath: {path: {{ $.Values.ascend.hostMounts.dcmiPath | quote }}, type: Directory}
+        - name: npu-smi
+          hostPath: {path: {{ $.Values.ascend.hostMounts.npuSmiPath | quote }}, type: File}
+        {{- end }}
+      nodeSelector:
+        {{- toYaml $worker.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml $worker.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml $worker.affinity | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dagster-qwen-ops.workerName" (dict "root" $ "worker" $worker "key" $key) }}
+  namespace: {{ include "dagster-qwen-ops.namespace" $ }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "dagster-qwen-ops.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ printf "qwen-worker-%s" $key | quote }}
+  ports:
+    {{- range $worker.endpoints }}
+    - name: {{ .id | lower | replace "_" "-" | trunc 15 | quote }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: TCP
+    {{- end }}
+---
+{{- end }}
+{{- end }}

@@ -1,0 +1,50 @@
+ops:
+  scan_cleaning_manifest:
+    config:
+      batch_id: cleaning-smoke-10-001
+      count: 10
+      parsed_bucket: k12-mineru-output
+      parsed_prefix: production/mineru/batch-001
+      output_bucket: k12-cleaned-corpus
+      output_prefix: cleaning-smoke-10-001
+      markdown_glob: "**/*.md"
+  step_job1:
+    config:
+      parallelism: 10
+      cpus_per_task: 2.0
+      max_retries: 1
+      task_timeout_seconds: 900.0
+      remove_image_markdown: true
+      remove_natural_image_details: true
+      text_image_policy: classify
+      text_image_min_chars: 4
+      repeated_line_min_occurrences: 3
+      repeated_line_max_chars: 80
+      watermark_regex: "(?:仅供|内部|试读|样书|水印|www\\.)"
+      remove_romanized_cover: true
+      cover_scan_lines: 120
+      isolated_text_max_chars: 1
+  step_job2:
+    config:
+      parallelism: 10
+      cpus_per_task: 2.0
+      max_retries: 1
+      task_timeout_seconds: 900.0
+      preserve_latex: true
+      convert_html_tables: true
+      unicode_form: NFKC
+      max_consecutive_blank_lines: 1
+      ocr_max_repeated_char_run: 8
+      drop_severe_ocr_lines: false
+      ocr_warn_line_ratio: 0.02
+  step_job3:
+    config:
+      parallelism: 10
+      cpus_per_task: 2.0
+      max_retries: 1
+      task_timeout_seconds: 900.0
+      chapter_heading_max_level: 3
+      sample_min_chars: 200
+      sample_max_chars: 8000
+      sample_overlap_chars: 0
+      include_source_uri: true

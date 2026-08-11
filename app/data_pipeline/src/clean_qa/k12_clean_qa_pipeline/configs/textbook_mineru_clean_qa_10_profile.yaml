@@ -1,0 +1,33 @@
+ops:
+  resolve_e2e_books:
+    config:
+      input_bucket: k12-textbook-raw
+      input_prefix: source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/
+      input_object_key: ""
+      input_object_keys:
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=079f09d8-5ff1-41a8-abce-cb858844a395/pdf/（根据2022年版课程标准修订）义务教育教科书•艺术•音乐三年级下册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=c18f3441-3f6a-4338-89cd-ad6cae942012/pdf/义务教育教科书·美术四年级上册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=b384cd9c-2277-4d28-acd4-2dd887121374/pdf/（根据2022年版课程标准修订）义务教育教科书体育与健康 二年级（全一册）.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=5064a312-a2d3-47dd-af46-058b6ae5d174/pdf/（根据2022年版课程标准修订）义务教育教科书•艺术•美术一年级下册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=5afced66-44a7-4c2d-bee6-4c24a3532173/pdf/（根据2022年版课程标准修订）义务教育教科书（五•四学制）•艺术•美术一年级下册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=d1aab735-7ee8-9fc0-a8f4-feccf476f915/pdf/（根据2022年版课程标准修订）义务教育教科书•体育与健康 三年级（全一册）.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=ccc8ebc4-f6c1-4209-a14f-3d41f1586c18/pdf/（根据2022年版课程标准修订）义务教育教科书·地理图册八年级下册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=77fceeac-8437-babd-6ada-f36a721f8599/pdf/（根据2022年版课程标准修订）义务教育教科书•艺术•美术•八年级上册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=92b0d867-b619-4dea-ad09-7948cd193d7b/pdf/（根据2022年版课程标准修订）义务教育教科书•艺术•美术• 七年级下册.pdf
+        - source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=a6abc204-e747-498a-bd3e-d1bac687d306/pdf/义务教育教科书·科学四年级上册.pdf
+      count: 10
+      mineru_bucket: k12-mineru-output
+      output_bucket: k12-cleaned-corpus
+      output_root: e2e-profile-10
+      resume: true
+      mineru_batch_size: 1
+      inference_slots: 4
+      queue_size: 6
+      block_inflight: 8
+      generation_max_inflight: 8
+      judge_max_inflight: 4
+      http_pool_size: 16
+      microbatch_size: 2
+      max_blocks_per_document: 0
+      judge_batch_size: 8
+      qwen_model: qwen3.6-35b-a3b

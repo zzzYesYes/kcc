@@ -1,0 +1,44 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dagster-qwen-ops.fullname" . }}-lifecycle
+  namespace: {{ include "dagster-qwen-ops.namespace" . }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames:
+      {{- range $key, $worker := .Values.workers }}
+      {{- if $worker.enabled }}
+      - {{ include "dagster-qwen-ops.workerName" (dict "root" $ "worker" $worker "key" $key) }}
+      {{- end }}
+      {{- end }}
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dagster-qwen-ops.fullname" . }}-lifecycle
+  namespace: {{ include "dagster-qwen-ops.namespace" . }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dagster-qwen-ops.serviceAccountName" . }}
+    namespace: {{ include "dagster-qwen-ops.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dagster-qwen-ops.fullname" . }}-lifecycle
+{{- end }}

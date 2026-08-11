@@ -1,0 +1,14 @@
+telemetry:
+  enabled: false
+
+run_monitoring:
+  enabled: true
+
+retention:
+  schedule:
+    purge_after_days: 30
+  sensor:
+    purge_after_days:
+      skipped: 7
+      failure: 30
+      success: 30

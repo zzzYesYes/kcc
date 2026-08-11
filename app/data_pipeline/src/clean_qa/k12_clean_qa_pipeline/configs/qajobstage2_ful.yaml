@@ -1,0 +1,28 @@
+ops:
+  resolve_stage1_test_manifest:
+    config:
+      stage1_bucket: k12-cleaned-corpus
+      stage1_source_prefix: stage1/full/stage1-v1.0.2
+      output_bucket: k12-cleaned-corpus
+      output_prefix: stage2/full/stage2-v1.1.0
+      count: 0
+      resume: true
+      document_inflight: 3
+      block_inflight: 8
+      generation_max_inflight: 8
+      judge_max_inflight: 4
+      http_pool_size: 16
+      microbatch_size: 2
+      max_blocks_per_document: 0
+      merge_max_chars: 3200
+      merge_max_blocks: 8
+      chapter_max_units: 12
+      document_max_units: 48
+      judge_batch_size: 8
+      stage2_version: stage2-v1.1.0
+      prompt_version: k12-qa-zh-v1.2
+      qwen_api_base: http://127.0.0.1:8000
+      qwen_model: qwen3.6-35b-a3b
+      benchmark: false
+      automated_validation: false
+      dry_run: false

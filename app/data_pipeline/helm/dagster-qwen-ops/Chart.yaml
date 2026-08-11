@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dagster-qwen-ops
+description: Portable Dagster lifecycle and chat demonstration for Qwen vLLM on Ascend
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

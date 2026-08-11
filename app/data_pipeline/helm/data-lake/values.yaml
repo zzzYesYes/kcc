@@ -1,0 +1,55 @@
+nameOverride: ""
+fullnameOverride: k12-data-lake
+
+credentials:
+  # The Secret must contain MINIO_ROOT_USER and MINIO_ROOT_PASSWORD.
+  existingSecret: minio-k12-root
+  create: false
+  rootUser: ""
+  rootPassword: ""
+
+s3:
+  endpoint: http://minio-k12.k12-lake.svc.cluster.local:9000
+  region: us-east-1
+  buckets:
+    - k12-textbook-raw
+    - k12-textbook-meta
+    - k12-mineru-output
+    - k12-cleaned-corpus
+    - k12-vector-artifacts
+    - k12-rejected
+
+minio:
+  enabled: true
+  namespace: k12-lake
+  createNamespace: true
+  nameOverride: minio-k12
+  image:
+    repository: quay.io/minio/minio
+    digest: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    pullPolicy: IfNotPresent
+  persistence:
+    storageClass: local-path
+    size: 500Gi
+    accessModes: [ReadWriteOnce]
+  service:
+    type: NodePort
+    apiNodePort: 30900
+    consoleNodePort: 31901
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+bucketInit:
+  enabled: true
+  image:
+    repository: quay.io/minio/mc
+    tag: latest
+    pullPolicy: IfNotPresent

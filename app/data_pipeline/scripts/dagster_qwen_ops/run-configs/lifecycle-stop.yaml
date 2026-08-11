@@ -1,0 +1,7 @@
+ops:
+  control_qwen_worker:
+    config:
+      action: stop
+      startup_timeout_seconds: 1800
+      shutdown_timeout_seconds: 300
+      poll_interval_seconds: 5.0
