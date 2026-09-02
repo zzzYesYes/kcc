@@ -1,0 +1,17 @@
+# Runtime data and local credentials are never part of the platform source.
+.env
+.env.*
+*.kubeconfig
+*.pem
+*.key
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+log/
+logs/
+state.json
+*.db
+*.sqlite
+*.sqlite3
+rendered/

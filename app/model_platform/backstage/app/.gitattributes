@@ -1,0 +1,2 @@
+# Keep the vendored Yarn release byte-exact; it is not hand-maintained source.
+.yarn/releases/*.cjs -text

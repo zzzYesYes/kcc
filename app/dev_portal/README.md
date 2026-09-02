@@ -1,7 +1,10 @@
-## TODO (Priority from high to low)
-1. [ ] app deployment (with CI/CD)
-2. [ ] Artifact management
-3. [ ] llm deployment (from artifact, integrate with resource management module)
-4. [ ] pull up training tasks (integrate with resource management module)
-4. [ ] visualizing deployed apps/llm
+# Developer portal integration
 
+The KCC developer portal integration is implemented and released with the
+model platform in [`../model_platform/backstage`](../model_platform/backstage).
+It provides catalog and constrained request workflows; it does not grant the
+browser direct Kubernetes write access or allow arbitrary model, image, node,
+or NPU input.
+
+The remaining standalone portal roadmap is tracked with the model-platform
+target architecture and release gates.

@@ -1,16 +1,13 @@
-# Architecture
+# KCC architecture
 
-## L0
-![L0 Architecture](images/kcc-arch-L0.svg)
-TODO: Add artifact storage & persistent s3 storage
+KCC is organized as independently reviewable platform modules. Monitoring,
+data-pipeline runtime, developer portal, and resource-management integration
+have separate ownership boundaries.
 
-## L1
-### IAM Module
+The full model-platform integration architecture, including Artifact Keeper,
+Gitea, Tekton, Argo CD, Crossplane, Backstage, and KubeRay responsibilities,
+is maintained in
+[`app/model_platform/TARGET-ARCHITECTURE.md`](../app/model_platform/TARGET-ARCHITECTURE.md).
 
-### Dev portal Module
-
-### Distributed Resource Management Module
-
-### Monitoring Module
-
-### DataPipeline Module
+Current production facts and release gates are intentionally separated from
+this architecture and live in the same module.
