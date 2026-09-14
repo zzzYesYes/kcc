@@ -1,0 +1,249 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trainingruns.training.kcc.io
+spec:
+  group: training.kcc.io
+  scope: Namespaced
+  names:
+    plural: trainingruns
+    singular: trainingrun
+    kind: TrainingRun
+    shortNames: [trun]
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - {name: Phase, type: string, jsonPath: .status.phase}
+        - {name: Attempt, type: integer, jsonPath: .status.attempt}
+        - {name: Output, type: string, jsonPath: .status.outputArtifact}
+        - {name: Age, type: date, jsonPath: .metadata.creationTimestamp}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-validations:
+            - rule: '!has(self.spec.dependsOn) || self.spec.dependsOn != self.metadata.name'
+              message: dependsOn must not reference the TrainingRun itself
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [runtimeProfile, recipe, workers, recovery]
+              x-kubernetes-validations:
+                - rule: >-
+                    (self.recovery.maxReplacements + 1) *
+                    (self.recovery.sameTopologyRetries + 1) <= 100
+                  message: total recovery attempt budget must not exceed 100
+                - rule: >-
+                    !has(self.nodeSelection) ||
+                    size(self.nodeSelection.activeNodes) == self.workers
+                  message: nodeSelection.activeNodes must contain exactly workers entries
+                - rule: >-
+                    !has(self.nodeSelection) ||
+                    self.nodeSelection.activeNodes.all(node, !(node in self.nodeSelection.spareNodes))
+                  message: activeNodes and spareNodes must be disjoint
+                - rule: >-
+                    !has(self.nodeSelection) ||
+                    self.recovery.maxReplacements <= size(self.nodeSelection.spareNodes)
+                  message: maxReplacements must not exceed the selected spare node count
+                - rule: >-
+                    self.runtimeProfile == oldSelf.runtimeProfile &&
+                    self.recipe == oldSelf.recipe &&
+                    self.workers == oldSelf.workers &&
+                    self.recovery == oldSelf.recovery &&
+                    ((!has(self.dependsOn) && !has(oldSelf.dependsOn)) ||
+                     (has(self.dependsOn) && has(oldSelf.dependsOn) &&
+                      self.dependsOn == oldSelf.dependsOn)) &&
+                    ((!has(self.nodeSelection) && !has(oldSelf.nodeSelection)) ||
+                     (has(self.nodeSelection) && has(oldSelf.nodeSelection) &&
+                      self.nodeSelection == oldSelf.nodeSelection)) &&
+                    ((!has(self.runtime) && !has(oldSelf.runtime)) ||
+                     (has(self.runtime) && has(oldSelf.runtime) &&
+                      self.runtime == oldSelf.runtime)) &&
+                    ((!has(self.training) && !has(oldSelf.training)) ||
+                     (has(self.training) && has(oldSelf.training) &&
+                      self.training == oldSelf.training))
+                  message: runtimeProfile, recipe, workers, recovery, dependsOn, nodeSelection, runtime, and training are immutable; only suspend and suspendMode may change
+              properties:
+                runtimeProfile:
+                  type: string
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                  maxLength: 63
+                recipe:
+                  type: string
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                  maxLength: 63
+                dependsOn:
+                  description: Name of the predecessor TrainingRun in this namespace that must succeed first.
+                  type: string
+                  minLength: 1
+                  maxLength: 63
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                workers: {type: integer, minimum: 1, maximum: 1024}
+                suspend: {type: boolean, default: false}
+                suspendMode:
+                  type: string
+                  enum: [Immediate, AfterCheckpoint]
+                  default: Immediate
+                recovery:
+                  type: object
+                  required: [sameTopologyRetries, maxReplacements, noProgressSeconds]
+                  properties:
+                    sameTopologyRetries: {type: integer, minimum: 0, maximum: 10}
+                    maxReplacements: {type: integer, minimum: 0, maximum: 100}
+                    noProgressSeconds: {type: integer, minimum: 0}
+                nodeSelection:
+                  type: object
+                  required: [activeNodes, spareNodes]
+                  properties:
+                    activeNodes:
+                      type: array
+                      minItems: 1
+                      maxItems: 1024
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+                        maxLength: 253
+                    spareNodes:
+                      type: array
+                      maxItems: 100
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+                        maxLength: 253
+                runtime:
+                  type: object
+                  properties:
+                    devicesPerNode: {type: integer, minimum: 1, maximum: 64}
+                    images:
+                      type: object
+                      properties:
+                        head: {type: string, minLength: 1, maxLength: 2048}
+                        worker: {type: string, minLength: 1, maxLength: 2048}
+                training:
+                  type: object
+                  properties:
+                    wandbSecretRef:
+                      type: string
+                      maxLength: 69
+                      pattern: '^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+                    command:
+                      type: array
+                      minItems: 1
+                      maxItems: 128
+                      items: {type: string, minLength: 1, maxLength: 4096}
+                    arguments:
+                      type: array
+                      maxItems: 256
+                      items: {type: string, minLength: 1, maxLength: 4096}
+                    environment:
+                      type: object
+                      additionalProperties: {type: string}
+                    artifacts:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                          pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'
+                        model:
+                          type: string
+                          pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'
+                        data:
+                          type: string
+                          pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'
+                        outputSubpath:
+                          type: string
+                          minLength: 1
+                          maxLength: 1024
+                          x-kubernetes-validations:
+                            - rule: '!self.startsWith("/") && self != ".." && !self.startsWith("../") && !self.endsWith("/..") && !self.contains("/../")'
+                              message: outputSubpath must be a safe relative path
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Queued, Starting, Running, Stopping, Recovering, Suspended, Succeeded, Stopped, ManualRequired]
+                observedGeneration: {type: integer, minimum: 1}
+                attempt: {type: integer, minimum: 0}
+                activeNodes:
+                  type: array
+                  items: {type: string}
+                spareNodes:
+                  type: array
+                  items: {type: string}
+                clusterName: {type: string}
+                cleanupClusterName: {type: string}
+                rayAddress: {type: string}
+                submissionId: {type: string}
+                retriesUsed: {type: integer, minimum: 0}
+                replacementsUsed: {type: integer, minimum: 0}
+                suspendedFrom: {type: string}
+                stopRequestGeneration: {type: integer, minimum: 1}
+                stopRequestedAt: {type: string}
+                stopBaselineIteration: {type: integer, minimum: 0}
+                startTime: {type: string}
+                runningStartedAt: {type: string}
+                resultWaitStartedAt: {type: string}
+                completionTime: {type: string}
+                updatedAt: {type: string}
+                outputArtifact:
+                  type: string
+                  pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'
+                progress:
+                  type: object
+                  properties:
+                    schemaVersion: {type: string}
+                    runName: {type: string}
+                    runUid: {type: string}
+                    attempt: {type: integer, minimum: 0}
+                    stage: {type: string}
+                    status: {type: string}
+                    message: {type: string}
+                    updatedAt: {type: string}
+                    details:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                checkpoint:
+                  type: object
+                  nullable: true
+                  properties:
+                    available: {type: boolean}
+                    iteration: {type: integer, minimum: 1}
+                    trackerSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+                    snapshotSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+                    selectedDir: {type: string}
+                    fileCount: {type: integer, minimum: 1}
+                    totalBytes: {type: integer, minimum: 1}
+                    hashMode: {type: string, enum: [sampled-v1]}
+                    sampleBytesPerFile: {type: integer, minimum: 1}
+                diagnosis:
+                  type: object
+                  properties:
+                    reportedFailedNodes:
+                      type: array
+                      items: {type: string}
+                    failedNodes:
+                      type: array
+                      items: {type: string}
+                    healthySpareNodes:
+                      type: array
+                      items: {type: string}
+                    consecutive: {type: integer, minimum: 0}
+                    observedAt: {type: string}
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status, reason, message, lastTransitionTime]
+                    properties:
+                      type: {type: string, minLength: 1}
+                      status: {type: string, enum: ['True', 'False', Unknown]}
+                      reason: {type: string, minLength: 1}
+                      message: {type: string}
+                      lastTransitionTime: {type: string}

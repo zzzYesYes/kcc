@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://training.kcc.io/schemas/training-recipe-v1beta1.json",
+  "title": "TrainingRecipe v1beta1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "training.kcc.io/v1beta1"},
+    "kind": {"const": "TrainingRecipe"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["framework", "command", "workingDirectory", "environment", "artifacts"],
+      "properties": {
+        "framework": {"type": "string", "minLength": 1},
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "workingDirectory": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/]",
+          "not": {"pattern": "(^|/)\\.\\.(/|$)"}
+        },
+        "environment": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "additionalProperties": {"type": "string"}
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "model", "data", "outputSubpath"],
+          "properties": {
+            "source": {"$ref": "#/$defs/artifactUri"},
+            "model": {"$ref": "#/$defs/artifactUri"},
+            "data": {"$ref": "#/$defs/artifactUri"},
+            "outputSubpath": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^/]",
+              "not": {"pattern": "(^|/)\\.\\.(/|$)"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifactUri": {
+      "type": "string",
+      "pattern": "^artifact://[^/?#\\s]+/[^/?#\\s]+/[^/?#\\s]+$"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "namespace": {"$ref": "#/$defs/name"}
+      }
+    }
+  }
+}

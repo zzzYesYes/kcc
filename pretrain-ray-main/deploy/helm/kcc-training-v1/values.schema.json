@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["controller", "runtimeServiceAccount", "artifactGateway", "npuExporter"],
+  "properties": {
+    "controller": {
+      "type": "object",
+      "required": ["image", "imagePullPolicy", "replicas", "pollSeconds", "resources"],
+      "properties": {
+        "image": {"type": "string", "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$"},
+        "imagePullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]},
+        "replicas": {"type": "integer", "minimum": 2},
+        "pollSeconds": {"type": "number", "minimum": 1},
+        "resources": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "runtimeServiceAccount": {"type": "string", "minLength": 1},
+    "artifactGateway": {
+      "type": "object",
+      "required": ["endpoint", "tokenSecretName"],
+      "properties": {
+        "endpoint": {"type": "string", "pattern": "^https?://"},
+        "tokenSecretName": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "npuExporter": {
+      "type": "object",
+      "required": ["namespace", "app", "port"],
+      "properties": {
+        "namespace": {"type": "string", "minLength": 1},
+        "app": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

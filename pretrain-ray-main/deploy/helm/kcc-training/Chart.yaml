@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kcc-training
+description: DEPRECATED legacy bootstrap RBAC retained for migration reference
+type: application
+deprecated: true
+version: 0.1.0
+appVersion: "0.1.0"

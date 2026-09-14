@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://training.kcc.io/schemas/training-runtime-profile-v1beta1.json",
+  "title": "TrainingRuntimeProfile v1beta1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "training.kcc.io/v1beta1"},
+    "kind": {"const": "TrainingRuntimeProfile"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["images", "rayVersion", "accelerator", "workspace", "scheduling", "integrations"],
+      "properties": {
+        "images": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["head", "worker"],
+          "properties": {
+            "head": {"$ref": "#/$defs/digestImage"},
+            "worker": {"$ref": "#/$defs/digestImage"},
+            "pullSecrets": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+              }
+            }
+          }
+        },
+        "rayVersion": {"type": "string", "minLength": 1},
+        "accelerator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resourceName", "devicesPerNode"],
+          "properties": {
+            "resourceName": {"type": "string", "minLength": 1},
+            "devicesPerNode": {"type": "integer", "minimum": 1, "maximum": 64},
+            "physicalDeviceIDs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {"type": "integer", "minimum": 0, "maximum": 63}
+            },
+            "runtimeClassName": {"$ref": "#/$defs/name"}
+          }
+        },
+        "workspace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claimName", "mountPath"],
+          "properties": {
+            "claimName": {"$ref": "#/$defs/name"},
+            "mountPath": {"type": "string", "pattern": "^/"}
+          }
+        },
+        "scheduling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["activeNodes", "spareNodes", "headSelector", "workerSelector"],
+          "properties": {
+            "activeNodes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "spareNodes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "headSelector": {"$ref": "#/$defs/stringMap"},
+            "workerSelector": {"$ref": "#/$defs/stringMap"}
+          }
+        },
+        "integrations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rankTableProvider", "healthProvider"],
+          "properties": {
+            "rankTableProvider": {"const": "clusterd"},
+            "healthProvider": {"enum": ["kubernetes", "npu-exporter"]},
+            "artifactProvider": {"enum": ["gateway", "workspace"], "default": "gateway"}
+          }
+        },
+        "podTemplate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "head": {"$ref": "#/$defs/podTemplate"},
+            "worker": {"$ref": "#/$defs/podTemplate"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "namespace": {"$ref": "#/$defs/name"}
+      }
+    },
+    "digestImage": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$"
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "quantity": {
+      "anyOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "integer", "minimum": 0}
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/quantity"}
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/quantity"}
+        }
+      }
+    },
+    "toleration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string"},
+        "operator": {"enum": ["Exists", "Equal"]},
+        "value": {"type": "string"},
+        "effect": {"enum": ["NoSchedule", "PreferNoSchedule", "NoExecute"]},
+        "tolerationSeconds": {"type": "integer", "minimum": 0}
+      }
+    },
+    "podTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resources": {"$ref": "#/$defs/resources"},
+        "tolerations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/toleration"}
+        },
+        "priorityClassName": {"type": "string", "minLength": 1},
+        "rayCpus": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,367 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/part-of: pretrain-ray-platform
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __KCC_RAY_CLUSTER__-hccl
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/part-of: pretrain-ray-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: __KCC_RAY_CLUSTER__-hccl
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/part-of: pretrain-ray-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - job-summary-__KCC_RAY_CLUSTER__
+      - hccl-sanitized-__KCC_RAY_CLUSTER__
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    resourceNames: ["__KCC_RAY_CLUSTER__"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: __KCC_RAY_CLUSTER__-hccl
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/part-of: pretrain-ray-platform
+subjects:
+  - kind: ServiceAccount
+    name: __KCC_RAY_CLUSTER__-hccl
+    namespace: __KCC_RAY_NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: __KCC_RAY_CLUSTER__-hccl
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: __KCC_RAY_CLUSTER__-incluster-kubeconfig
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/part-of: pretrain-ray-platform
+data:
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: service-account
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: service-account
+          namespace: __KCC_RAY_NAMESPACE__
+    current-context: in-cluster
+---
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: __KCC_RAY_CLUSTER__
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/part-of: pretrain-ray-platform
+    trainctl.io/purpose: pretrain-training
+  annotations:
+    ray.io/overwrite-container-cmd: "true"
+    trainctl.io/allowed-nodes: gpu-server-00,gpu-server-01
+    trainctl.io/checkpoint-retention: retain-all
+spec:
+  rayVersion: "2.49.0"
+  enableInTreeAutoscaling: false
+
+  headGroupSpec:
+    serviceType: ClusterIP
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+      num-cpus: "2"
+    template:
+      metadata:
+        labels:
+          app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+          app.kubernetes.io/component: ray-head
+        annotations:
+          huawei.com/skip-ascend-plugin: enabled
+      spec:
+        serviceAccountName: __KCC_RAY_CLUSTER__-hccl
+        automountServiceAccountToken: true
+        securityContext:
+          fsGroup: 1000
+          fsGroupChangePolicy: OnRootMismatch
+        nodeSelector:
+          kubernetes.io/hostname: __KCC_RAY_HEAD_NODE__
+        terminationGracePeriodSeconds: 30
+        containers:
+          - name: ray-head
+            image: __KCC_RAY_HEAD_IMAGE__
+            imagePullPolicy: __KCC_RAY_IMAGE_PULL_POLICY__
+            command: ["/bin/bash", "-lc", "--"]
+            args:
+              - |
+                set -euo pipefail
+                mkdir -p /opt/trainctl-runtime
+                tar -xzf /opt/trainctl-source/hccl-check-src.tgz -C /opt/trainctl-runtime
+                test -f /opt/trainctl-runtime/hccl_check/pipeline.py
+                export PYTHONPATH=/opt/trainctl-runtime:${PYTHONPATH:-}
+                python -c "import platform, ray; assert platform.python_version() == '3.10.0'; assert ray.__version__ == '2.49.0'"
+                ulimit -n 65536
+                eval "$KUBERAY_GEN_RAY_START_CMD"
+            ports:
+              - name: gcs-server
+                containerPort: 6379
+              - name: dashboard
+                containerPort: 8265
+              - name: client
+                containerPort: 10001
+              - name: metrics
+                containerPort: 8080
+            resources:
+              requests:
+                cpu: "2"
+                memory: 4Gi
+              limits:
+                cpu: "8"
+                memory: 16Gi
+            env:
+              - name: PYTHONPATH
+                value: /opt/trainctl-runtime
+              - name: RANK_TABLE_FILE
+                value: /user/serverid/devindex/config/hccl.json
+              - name: KUBECONFIG
+                value: /etc/trainctl/kubeconfig
+            volumeMounts:
+              - name: runtime-source
+                mountPath: /opt/trainctl-source
+                readOnly: true
+              - name: runtime-work
+                mountPath: /opt/trainctl-runtime
+              - name: ranktable
+                mountPath: /user/serverid/devindex/config
+                readOnly: true
+              - name: hccl-evidence
+                mountPath: /evidence
+              - name: kubectl
+                mountPath: /usr/local/bin/kubectl
+                readOnly: true
+              - name: incluster-kubeconfig
+                mountPath: /etc/trainctl/kubeconfig
+                subPath: kubeconfig
+                readOnly: true
+        volumes:
+          - name: runtime-source
+            configMap:
+              name: __KCC_RAY_CLUSTER__-hccl-runtime
+              defaultMode: 0444
+              items:
+                - key: hccl-check-src.tgz
+                  path: hccl-check-src.tgz
+          - name: runtime-work
+            emptyDir: {}
+          - name: ranktable
+            configMap:
+              name: hccl-sanitized-__KCC_RAY_CLUSTER__
+              optional: true
+              defaultMode: 0444
+              items:
+                - key: hccl.json
+                  path: hccl.json
+          - name: hccl-evidence
+            emptyDir: {}
+          - name: kubectl
+            hostPath:
+              path: /usr/local/bin/k3s
+              type: File
+          - name: incluster-kubeconfig
+            configMap:
+              name: __KCC_RAY_CLUSTER__-incluster-kubeconfig
+              defaultMode: 0444
+
+  workerGroupSpecs:
+    - groupName: npu-workers
+      replicas: 2
+      minReplicas: 2
+      maxReplicas: 2
+      rayStartParams:
+        num-cpus: "32"
+        resources: '"{\"NPU\":__KCC_RAY_DEVICES_PER_NODE__,\"trainctl_worker\":1}"'
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+            app.kubernetes.io/component: ray-worker
+        spec:
+          automountServiceAccountToken: false
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: In
+                        values:
+                          - gpu-server-00
+                          - gpu-server-01
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      ray.io/cluster: __KCC_RAY_CLUSTER__
+                      ray.io/node-type: worker
+                  topologyKey: kubernetes.io/hostname
+          terminationGracePeriodSeconds: 30
+          containers:
+            - name: ray-worker
+              image: __KCC_RAY_WORKER_IMAGE__
+              imagePullPolicy: __KCC_RAY_IMAGE_PULL_POLICY__
+              securityContext:
+                privileged: true
+              command: ["/bin/bash", "-lc", "--"]
+              args:
+                - |
+                  set -euo pipefail
+                  export PATH=/root/miniconda3/envs/verl_pt27_25rc3/bin:${PATH}
+                  export LD_LIBRARY_PATH=/usr/local/Ascend/driver/lib64/common:/usr/local/Ascend/driver/lib64/driver:/usr/local/Ascend/driver/lib64:${LD_LIBRARY_PATH:-}
+                  source /usr/local/Ascend/cann/ascend-toolkit/set_env.sh
+                  mkdir -p /opt/trainctl-runtime
+                  tar -xzf /opt/trainctl-source/hccl-check-src.tgz -C /opt/trainctl-runtime
+                  test -f /opt/trainctl-runtime/hccl_check/pipeline.py
+                  make -C /opt/trainctl-runtime/native ASCEND_DIR=/usr/local/Ascend/cann/ascend-toolkit/latest
+                  mkdir -p /opt/trainctl-runtime/bin
+                  cp /opt/trainctl-runtime/native/bin/ranktable_allreduce_probe /opt/trainctl-runtime/bin/ranktable_allreduce_probe
+                  chmod 0755 /opt/trainctl-runtime/bin/ranktable_allreduce_probe
+                  export PYTHONPATH=/opt/trainctl-runtime:${PYTHONPATH:-}
+                  python -c "import platform, ray; assert platform.python_version() == '3.10.0'; assert ray.__version__ == '2.49.0'"
+                  ulimit -n 65536
+                  eval "$KUBERAY_GEN_RAY_START_CMD"
+              env:
+                - name: PATH
+                  value: /root/miniconda3/envs/verl_pt27_25rc3/bin:/root/miniconda3/condabin:/root/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                - name: PYTHONPATH
+                  value: /opt/trainctl-runtime
+                - name: HCCL_CHECK_PROBE
+                  value: /opt/trainctl-runtime/bin/ranktable_allreduce_probe
+                - name: RANK_TABLE_FILE
+                  value: /user/serverid/devindex/config/hccl.json
+                - name: RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES
+                  value: "1"
+                - name: HOST_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+              resources:
+                requests:
+                  cpu: "32"
+                  memory: 128Gi
+                  __KCC_RAY_NPU_RESOURCE__: "__KCC_RAY_DEVICES_PER_NODE__"
+                limits:
+                  cpu: "128"
+                  memory: 512Gi
+                  __KCC_RAY_NPU_RESOURCE__: "__KCC_RAY_DEVICES_PER_NODE__"
+              volumeMounts:
+                - name: runtime-source
+                  mountPath: /opt/trainctl-source
+                  readOnly: true
+                - name: runtime-work
+                  mountPath: /opt/trainctl-runtime
+                - name: ranktable
+                  mountPath: /user/serverid/devindex/config
+                  readOnly: true
+                - name: models
+                  mountPath: /mnt/models
+                - name: ascend-driver
+                  mountPath: /usr/local/Ascend/driver
+                  readOnly: true
+                - name: ascend-dcmi
+                  mountPath: /usr/local/dcmi
+                  readOnly: true
+                - name: npu-smi
+                  mountPath: /usr/local/bin/npu-smi
+                  readOnly: true
+                - name: shared-memory
+                  mountPath: /dev/shm
+          volumes:
+            - name: runtime-source
+              configMap:
+                name: __KCC_RAY_CLUSTER__-hccl-runtime
+                defaultMode: 0444
+                items:
+                  - key: hccl-check-src.tgz
+                    path: hccl-check-src.tgz
+            - name: runtime-work
+              emptyDir: {}
+            - name: ranktable
+              configMap:
+                name: hccl-sanitized-__KCC_RAY_CLUSTER__
+                optional: true
+                defaultMode: 0444
+                items:
+                  - key: hccl.json
+                    path: hccl.json
+            - name: models
+              hostPath:
+                path: __KCC_RAY_WORKSPACE_HOST_PATH__
+                type: Directory
+            - name: ascend-driver
+              hostPath:
+                path: /usr/local/Ascend/driver
+                type: Directory
+            - name: ascend-dcmi
+              hostPath:
+                path: /usr/local/dcmi
+                type: Directory
+            - name: npu-smi
+              hostPath:
+                path: /usr/local/bin/npu-smi
+                type: File
+            - name: shared-memory
+              emptyDir:
+                medium: Memory
+                sizeLimit: 64Gi

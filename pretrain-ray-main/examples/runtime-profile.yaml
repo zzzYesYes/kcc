@@ -1,0 +1,40 @@
+apiVersion: training.kcc.io/v1beta1
+kind: TrainingRuntimeProfile
+metadata:
+  name: ascend-a3
+  namespace: kcc-training
+spec:
+  images:
+    head: registry.example/kcc-training-head@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    worker: registry.example/kcc-training-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    pullSecrets: []
+  rayVersion: 2.49.0
+  accelerator:
+    resourceName: huawei.com/Ascend910
+    devicesPerNode: 8
+    # Optional: pin exact Ascend physical IDs with an equally sized list.
+    # physicalDeviceIDs: [0, 1, 2, 3, 4, 5, 6, 7]
+    runtimeClassName: ascend
+  workspace:
+    claimName: kcc-workspace
+    mountPath: /workspace
+  scheduling:
+    activeNodes: [npu-node-01, npu-node-02]
+    spareNodes: []
+    headSelector: {kubernetes.io/arch: amd64}
+    workerSelector: {accelerator: ascend-a3}
+  integrations:
+    rankTableProvider: clusterd
+    healthProvider: kubernetes
+  podTemplate:
+    head:
+      resources:
+        requests: {cpu: "2", memory: 4Gi}
+        limits: {cpu: "8", memory: 16Gi}
+      rayCpus: 2
+    worker:
+      resources:
+        requests: {cpu: "32", memory: 128Gi}
+        limits: {cpu: "128", memory: 512Gi}
+      rayCpus: 32
+

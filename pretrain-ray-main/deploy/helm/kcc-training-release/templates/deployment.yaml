@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kcc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "kcc.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: kcc-training, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels: {{- include "kcc.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kcc.fullname" . }}
+      automountServiceAccountToken: true
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: controller
+          image: {{ .Values.controller.image }}
+          imagePullPolicy: {{ .Values.controller.imagePullPolicy }}
+          command: ["python", "-m", "kcc_training.controller_release"]
+          args:
+            - --namespace
+            - $(POD_NAMESPACE)
+            - --runtime-service-account
+            - {{ .Values.runtimeServiceAccount }}
+            - --poll-seconds
+            - {{ .Values.controller.pollSeconds | quote }}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: KCC_ARTIFACT_GATEWAY, value: {{ .Values.artifactGateway.endpoint | quote }} }
+            - {name: KCC_NPU_EXPORTER_NAMESPACE, value: {{ .Values.npuExporter.namespace | quote }} }
+            - {name: KCC_NPU_EXPORTER_APP, value: {{ .Values.npuExporter.app | quote }} }
+            - {name: KCC_NPU_EXPORTER_PORT, value: {{ .Values.npuExporter.port | quote }} }
+            {{- if .Values.artifactGateway.tokenSecretName }}
+            - {name: KCC_ARTIFACT_TOKEN_SECRET, value: {{ .Values.artifactGateway.tokenSecretName | quote }} }
+            {{- end }}
+          ports: [{name: health, containerPort: 8080}]
+          livenessProbe: {httpGet: {path: /healthz, port: health}, initialDelaySeconds: 5, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /readyz, port: health}, initialDelaySeconds: 2, periodSeconds: 5}
+          resources: {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      terminationGracePeriodSeconds: 30

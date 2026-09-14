@@ -1,0 +1,8 @@
+apiVersion: v2
+name: kcc-training
+description: DEPRECATED migration-stage KCC controller Chart; use kcc-training-stable
+type: application
+deprecated: true
+version: 1.0.0
+appVersion: "1.0.0"
+
