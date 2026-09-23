@@ -66,7 +66,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backstage
-          image: 110.120.0.3:30670/container-images/platform/kcc-backstage:0.1.6.1-running-start-20260828@sha256:1f5d475c34dd7c6c1b0638a5bc2cf4f13a428da0f7aa0bbad791683a9a72fe17
+          image: 110.120.0.3:30670/container-images/platform/kcc-backstage@sha256:dcc269a6156d9b02aa32d8f9a9e0aefa11996abe742038d44335ea401cdeb898
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

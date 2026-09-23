@@ -19,6 +19,10 @@ spec:
     modelPath: /models/Qwen3.8-27B-w8a8
     modelName: qwen3.8-27b-w8a8
     rayVersion: "2.48.0"
+    headCPU: "2"
+    headMemory: 16Gi
+    workerCPU: "48"
+    workerMemory: 256Gi
     serveConfigV2: |
       applications:
       - name: default
@@ -54,6 +58,18 @@ spec:
                 enforce_eager: true
               compilation_config:
                 cudagraph_mode: FULL_DECODE_ONLY
+    serving:
+      tensorParallelSize: 2
+      dataParallelSize: 1
+      pipelineParallelSize: 1
+      requestedReplicas: 1
+      maxModelLen: 32768
+      maxNumSeqs: 64
+      maxNumBatchedTokens: 8192
+      gpuMemoryUtilization: 0.9
+      prefixCaching: true
+      mtpTokens: 3
+      maxOngoingRequests: 64
     npuPerWorker: 2
     workerReplicas: 0
     cache:

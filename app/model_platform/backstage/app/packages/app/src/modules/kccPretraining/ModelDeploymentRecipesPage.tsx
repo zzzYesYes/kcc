@@ -19,6 +19,7 @@ import ArrowBackIcon from '@material-ui/icons/ArrowBack';
 import ChevronRightIcon from '@material-ui/icons/ChevronRight';
 import PlayArrowIcon from '@material-ui/icons/PlayArrow';
 import SearchIcon from '@material-ui/icons/Search';
+import StopIcon from '@material-ui/icons/Stop';
 import { Content, Page } from '@backstage/core-components';
 import { makeStyles } from '@material-ui/core/styles';
 
@@ -463,9 +464,10 @@ export const ModelDeploymentRecipesPage = () => {
   const [selectedVariantId, setSelectedVariantId] = useState(
     'qwen38-w8a8-ray-ascend-910b3-tp2-v1',
   );
-  const [deploymentName, setDeploymentName] = useState('qwen38-27b');
+  const deploymentName = 'qwen38-27b';
   const [replicas, setReplicas] = useState(1);
   const [tensorParallelSize, setTensorParallelSize] = useState(2);
+  const [dataParallelSize, setDataParallelSize] = useState(1);
   const [pipelineParallelSize, setPipelineParallelSize] = useState(1);
   const [maxModelLen, setMaxModelLen] = useState(32768);
   const [maxNumSeqs, setMaxNumSeqs] = useState(64);
@@ -473,10 +475,16 @@ export const ModelDeploymentRecipesPage = () => {
   const [memoryUtilization, setMemoryUtilization] = useState(0.9);
   const [prefixCaching, setPrefixCaching] = useState(true);
   const [mtpTokens, setMtpTokens] = useState(3);
+  const [maxOngoingRequests, setMaxOngoingRequests] = useState(64);
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal');
   const [visibility, setVisibility] = useState<'internal' | 'private'>(
     'internal',
   );
+  const [savedConfigVersion, setSavedConfigVersion] = useState<number>();
+  const [currentRunningVersion, setCurrentRunningVersion] = useState<number>();
+  const [pendingStartVersion, setPendingStartVersion] = useState<number>();
+  const [operationMessage, setOperationMessage] = useState<string>();
+  const [operationBusy, setOperationBusy] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -500,6 +508,29 @@ export const ModelDeploymentRecipesPage = () => {
       })
       .then(payload => {
         if (mounted) setLiveStatus(payload);
+      })
+      .catch(() => undefined);
+    fetch('/api/model-deployment-operations/configurations/qwen38-27b', {
+      credentials: 'same-origin',
+    })
+      .then(response => response.ok ? response.json() as Promise<{ configurations?: Array<any>; currentRunningVersion?: number; pendingStartVersion?: number }> : undefined)
+      .then(payload => {
+        const latest = payload?.configurations?.[0];
+        if (!mounted || !latest) return;
+        setSavedConfigVersion(latest.configVersion);
+        setCurrentRunningVersion(payload?.currentRunningVersion);
+        setPendingStartVersion(payload?.pendingStartVersion);
+        setTensorParallelSize(latest.tensorParallelSize);
+        setDataParallelSize(latest.dataParallelSize);
+        setPipelineParallelSize(latest.pipelineParallelSize);
+        setReplicas(latest.requestedReplicas);
+        setMaxModelLen(latest.maxModelLen);
+        setMaxNumSeqs(latest.maxNumSeqs);
+        setMaxNumBatchedTokens(latest.maxNumBatchedTokens);
+        setMemoryUtilization(latest.gpuMemoryUtilization);
+        setPrefixCaching(latest.prefixCaching);
+        setMtpTokens(latest.mtpTokens);
+        setMaxOngoingRequests(latest.maxOngoingRequests);
       })
       .catch(() => undefined);
     return () => {
@@ -533,6 +564,7 @@ export const ModelDeploymentRecipesPage = () => {
     setTensorParallelSize(
       variant.serving?.tensorParallelSize ?? Math.max(variant.npuPerWorker, 1),
     );
+    setDataParallelSize(variant.serving?.dataParallelSize ?? 1);
     setPipelineParallelSize(variant.serving?.pipelineParallelSize ?? 1);
     setMaxModelLen(variant.serving?.maxModelLen ?? 32768);
     setMaxNumSeqs(variant.serving?.maxNumSeqs ?? 64);
@@ -540,6 +572,9 @@ export const ModelDeploymentRecipesPage = () => {
     setMemoryUtilization(variant.serving?.gpuMemoryUtilization ?? 0.9);
     setPrefixCaching(variant.serving?.prefixCaching ?? true);
     setMtpTokens(variant.serving?.mtpTokens ?? 0);
+    setMaxOngoingRequests(
+      variant.serving?.maxOngoingRequests ?? variant.serving?.maxNumSeqs ?? 64,
+    );
   };
 
   const openModel = (model: ModelRecipe) => {
@@ -648,36 +683,88 @@ export const ModelDeploymentRecipesPage = () => {
     );
   }
 
-  const serving = selectedVariant.serving;
-  const validDeploymentName = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(
-    deploymentName,
-  );
-  const requestFormData = encodeURIComponent(
-    JSON.stringify({
-      deploymentName,
-      projectRef: 'model-serving',
-      modelVersionRef: selectedModel.id,
-      runtimeProfileRef: selectedVariant.id,
-      visibility,
-      requestedTensorParallelSize: tensorParallelSize,
-      requestedDataParallelSize: serving?.dataParallelSize ?? 1,
-      requestedPipelineParallelSize: pipelineParallelSize,
-      requestedReplicas: replicas,
-      requestedMaxModelLen: maxModelLen,
-      requestedMaxNumSeqs: maxNumSeqs,
-      requestedMaxNumBatchedTokens: maxNumBatchedTokens,
-      requestedGpuMemoryUtilization: memoryUtilization,
-      requestedPrefixCaching: prefixCaching,
-      requestedMtpTokens: mtpTokens,
-      priority,
-    }),
-  );
-  const requestHref = `/create/templates/default/request-model-deployment?formData=${requestFormData}`;
-  const liveDeployment = liveStatus?.deployments.find(
-    deployment =>
-      deployment.modelVersionRef === selectedModel.id ||
-      deployment.name === deploymentName,
-  );
+  const directConfig = {
+    modelVersionRef: selectedModel.id,
+    runtimeProfileRef: selectedVariant.id,
+    tensorParallelSize,
+    dataParallelSize,
+    pipelineParallelSize,
+    requestedReplicas: replicas,
+    maxModelLen,
+    maxNumSeqs,
+    maxNumBatchedTokens,
+    gpuMemoryUtilization: memoryUtilization,
+    prefixCaching,
+    mtpTokens,
+    maxOngoingRequests,
+  };
+  const saveConfiguration = async () => {
+    setOperationBusy(true);
+    setOperationMessage(undefined);
+    try {
+      const response = await fetch(
+        '/api/model-deployment-operations/configurations/qwen38-27b',
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(directConfig) },
+      );
+      const payload = await response.json() as { configuration?: { configVersion?: number }; error?: string };
+      if (!response.ok || !payload.configuration?.configVersion) throw new Error(payload.error ?? `Save failed (HTTP ${response.status})`);
+      setSavedConfigVersion(payload.configuration.configVersion);
+      setOperationMessage(`Saved configuration v${payload.configuration.configVersion}. Start will use exactly this version.`);
+    } catch (error) {
+      setOperationMessage(error instanceof Error ? error.message : 'Configuration save failed');
+    } finally { setOperationBusy(false); }
+  };
+  const requestDirectOperation = async (action: 'start' | 'stop') => {
+    setOperationBusy(true);
+    setOperationMessage(undefined);
+    try {
+      if (action === 'start' && !savedConfigVersion) throw new Error('Save configuration before Start so the selected version is explicit');
+      const response = await fetch(`/api/model-deployment-operations/deployments/qwen38-27b/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'start' ? { configVersion: savedConfigVersion } : {}),
+      });
+      const payload = await response.json() as { requestId?: string; phase?: string; error?: string };
+      if (!response.ok || !payload.requestId) throw new Error(payload.error ?? `${action} failed`);
+      setOperationMessage(`${action === 'start' ? 'Start' : 'Stop'} request ${payload.requestId} is ${payload.phase}.`);
+    } catch (error) {
+      setOperationMessage(error instanceof Error ? error.message : `${action} failed`);
+    } finally { setOperationBusy(false); }
+  };
+  const liveDeployment =
+    liveStatus?.deployments.find(
+      deployment => deployment.name === deploymentName,
+    ) ??
+    liveStatus?.deployments.find(
+      deployment => deployment.modelVersionRef === selectedModel.id,
+    );
+  let lifecycleAction:
+    | {
+        action: 'start' | 'stop';
+        color: 'primary' | 'secondary';
+        disabled: boolean;
+        icon: JSX.Element;
+        label: string;
+      }
+    | undefined;
+  if (liveDeployment?.desiredState === 'Stopped') {
+    lifecycleAction = {
+      action: 'start',
+      color: 'primary' as const,
+      disabled: !savedConfigVersion || operationBusy,
+      icon: <PlayArrowIcon />,
+      label: savedConfigVersion
+        ? `Start saved v${savedConfigVersion}`
+        : 'Save configuration first',
+    };
+  } else if (liveDeployment?.desiredState === 'Running') {
+    lifecycleAction = {
+      action: 'stop',
+      color: 'secondary' as const,
+      disabled: operationBusy,
+      icon: <StopIcon />,
+      label: 'Stop',
+    };
+  }
   const totalNpu = selectedVariant.npuPerWorker * replicas;
   const tpChoices = [1, 2, 4, 8].filter(
     value => value * pipelineParallelSize <= selectedVariant.npuPerWorker,
@@ -685,6 +772,7 @@ export const ModelDeploymentRecipesPage = () => {
   const ppChoices = [1, 2].filter(
     value => value * tensorParallelSize <= selectedVariant.npuPerWorker,
   );
+  const dpChoices = [1, 2, 4].filter(value => value <= replicas);
 
   const row = (label: string, content: JSX.Element, help?: string) => (
     <Box className={classes.configRow}>
@@ -757,14 +845,16 @@ export const ModelDeploymentRecipesPage = () => {
           </Box>
           <Button
             className={classes.deployButton}
-            color="primary"
-            component="a"
-            disabled={!validDeploymentName}
-            href={requestHref}
-            startIcon={<PlayArrowIcon />}
+            color={lifecycleAction?.color ?? 'primary'}
+            disabled={!lifecycleAction || lifecycleAction.disabled}
+            onClick={() =>
+              lifecycleAction &&
+              void requestDirectOperation(lifecycleAction.action)
+            }
+            startIcon={lifecycleAction?.icon ?? <PlayArrowIcon />}
             variant="contained"
           >
-            Deploy model
+            {lifecycleAction?.label ?? 'Lifecycle operation unavailable'}
           </Button>
         </Paper>
 
@@ -795,7 +885,12 @@ export const ModelDeploymentRecipesPage = () => {
                       classes={classes}
                       key={value}
                       label={`${value} replica${value === 1 ? '' : 's'}`}
-                      onSelect={setReplicas}
+                      onSelect={nextReplicas => {
+                        setReplicas(nextReplicas);
+                        if (dataParallelSize > nextReplicas) {
+                          setDataParallelSize(nextReplicas);
+                        }
+                      }}
                       selected={replicas}
                       value={value}
                     />
@@ -823,6 +918,16 @@ export const ModelDeploymentRecipesPage = () => {
                       label={`Pipeline · PP ${value}`}
                       onSelect={setPipelineParallelSize}
                       selected={pipelineParallelSize}
+                      value={value}
+                    />
+                  ))}
+                  {dpChoices.map(value => (
+                    <Choice
+                      classes={classes}
+                      key={`dp-${value}`}
+                      label={`Data parallel · DP ${value}`}
+                      onSelect={setDataParallelSize}
+                      selected={dataParallelSize}
                       value={value}
                     />
                   ))}
@@ -920,6 +1025,22 @@ export const ModelDeploymentRecipesPage = () => {
                 </Box>,
               )}
               {row(
+                'Max ongoing requests',
+                <Box className={classes.optionGroup}>
+                  {[16, 32, 64].map(value => (
+                    <Choice
+                      classes={classes}
+                      key={value}
+                      label={`${value} requests`}
+                      onSelect={setMaxOngoingRequests}
+                      selected={maxOngoingRequests}
+                      value={value}
+                    />
+                  ))}
+                </Box>,
+                'A bounded queue limit passed to Ray Serve with the same structured contract.',
+              )}
+              {row(
                 'Service',
                 <Box className={classes.optionGroup}>
                   {(['internal', 'private'] as const).map(value => (
@@ -958,15 +1079,10 @@ export const ModelDeploymentRecipesPage = () => {
               <Typography variant="h6">Deployment</Typography>
               <TextField
                 className={classes.field}
-                error={!validDeploymentName}
+                disabled
                 fullWidth
-                helperText={
-                  validDeploymentName
-                    ? 'Used as the service name'
-                    : 'Use lowercase letters, numbers, and hyphens'
-                }
+                helperText="Direct Operations currently manages this fixed production instance. Multi-instance deployment is deferred."
                 label="Name"
-                onChange={event => setDeploymentName(event.target.value)}
                 value={deploymentName}
                 variant="outlined"
               />
@@ -983,6 +1099,9 @@ export const ModelDeploymentRecipesPage = () => {
                     `TP ${tensorParallelSize} / PP ${pipelineParallelSize}`,
                   ],
                   ['Artifact', selectedModel.repository],
+                  ['Running version', currentRunningVersion ? `v${currentRunningVersion}` : 'None'],
+                  ['Latest saved', savedConfigVersion ? `v${savedConfigVersion}` : 'Not saved'],
+                  ['Pending start', pendingStartVersion ? `v${pendingStartVersion}` : 'None'],
                 ].map(([label, value]) => (
                   <Box key={label}>
                     <Divider />
@@ -1010,19 +1129,42 @@ export const ModelDeploymentRecipesPage = () => {
               </Box>
               <Button
                 className={classes.field}
-                color="primary"
-                component="a"
-                disabled={!validDeploymentName}
+                disabled={operationBusy}
                 fullWidth
-                href={requestHref}
-                startIcon={<PlayArrowIcon />}
-                variant="contained"
+                onClick={() => void saveConfiguration()}
+                variant="outlined"
               >
-                Deploy model
+                {operationBusy ? 'Saving…' : 'Save configuration'}
               </Button>
-              {!validDeploymentName && (
-                <Typography className={classes.error} variant="caption">
-                  Enter a valid deployment name to continue.
+              {liveDeployment?.desiredState === 'Stopped' && (
+                <Button
+                  className={classes.field}
+                  color="primary"
+                  disabled={!savedConfigVersion || operationBusy}
+                  fullWidth
+                  onClick={() => void requestDirectOperation('start')}
+                  startIcon={<PlayArrowIcon />}
+                  variant="contained"
+                >
+                  {savedConfigVersion ? `Start saved v${savedConfigVersion}` : 'Save before Start'}
+                </Button>
+              )}
+              {liveDeployment?.desiredState === 'Running' && (
+                <Button
+                  className={classes.field}
+                  color="secondary"
+                  disabled={operationBusy}
+                  fullWidth
+                  onClick={() => void requestDirectOperation('stop')}
+                  startIcon={<StopIcon />}
+                  variant="contained"
+                >
+                  Stop
+                </Button>
+              )}
+              {operationMessage && (
+                <Typography className={classes.optionHelp} variant="caption">
+                  {operationMessage}
                 </Typography>
               )}
             </Paper>

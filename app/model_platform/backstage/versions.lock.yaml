@@ -7,8 +7,8 @@ spec:
     createAppVersion: 0.9.0
     releaseVersion: 1.53.0
     packageManager: yarn@4.13.0
-    targetImage: 110.120.0.3:30670/container-images/platform/kcc-backstage:0.1.5-stopped-contract-20260828
-    targetLinuxAMD64Digest: sha256:800de8e16dcd8e10b427b7138bcd9fa3193f0881cb960ed840d0122de185cc73
+    targetImage: 110.120.0.3:30670/container-images/platform/kcc-backstage:0.6.23-direct-accept-6601e62
+    targetLinuxAMD64Digest: sha256:dcc269a6156d9b02aa32d8f9a9e0aefa11996abe742038d44335ea401cdeb898
   node:
     version: 24-trixie-slim
     sourceImage: docker.1ms.run/library/node:24-trixie-slim

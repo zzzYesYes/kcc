@@ -6,8 +6,9 @@ metadata:
   labels:
     app.kubernetes.io/part-of: model-platform
     app.kubernetes.io/managed-by: argocd
-    platform.example.com/requested-by: platform-team
+    platform.example.com/requested-by: gitadmin
   annotations:
+    platform.example.com/lifecycle-controller: enabled
     platform.example.com/request-mode: declarative-stopped
     platform.example.com/requested-tensor-parallel-size: "2"
     platform.example.com/requested-pipeline-parallel-size: "1"
@@ -20,18 +21,18 @@ metadata:
 spec:
   crossplane:
     compositionRef:
-      name: modeldeployment-qwen38-ray-v1alpha1
+      name: modeldeployment-stopped-v1alpha1
     compositionUpdatePolicy: Automatic
   projectRef: model-serving
   modelVersionRef: qwen3.8-27b-w8a8
   runtimeProfileRef: qwen38-w8a8-ray-ascend-910b3-tp2-v1
   compositionRef:
-    name: modeldeployment-qwen38-ray-v1alpha1
+    name: modeldeployment-stopped-v1alpha1
   desiredState: Stopped
   placement:
     acceleratorPool: ascend-a3
-    staticDeviceAllocation: Ascend910-8,Ascend910-9
     nodeSelector:
+      accelerator-type: module-a3-16
       kubernetes.io/arch: arm64
       kubernetes.io/hostname: a3-server-00
       node.kubernetes.io/npu.chip.name: Ascend910
@@ -45,7 +46,7 @@ spec:
     manifestDigest: sha256:f2afa9e2f328d9efb78bc88d526413783304c4706a508f0da1db456aeac5c20f
   runtime:
     image: 110.120.0.3:30670/container-images/qwen38-ray-runtime@sha256:cdb5b3b44a1192b2d1268941033b004d5e9cf371621a0920f6d0afe62484e942
-    rayVersion: "2.48.0"
+    rayVersion: 2.48.0
     modelPath: /models/Qwen3.8-27B-w8a8
     modelName: qwen3.8-27b-w8a8
     serveConfigV2: |
@@ -83,6 +84,18 @@ spec:
                 enforce_eager: true
               compilation_config:
                 cudagraph_mode: FULL_DECODE_ONLY
+    serving:
+      tensorParallelSize: 2
+      dataParallelSize: 1
+      pipelineParallelSize: 1
+      requestedReplicas: 1
+      maxModelLen: 32768
+      maxNumSeqs: 64
+      maxNumBatchedTokens: 8192
+      gpuMemoryUtilization: 0.9
+      prefixCaching: true
+      mtpTokens: 3
+      maxOngoingRequests: 64
     headCPU: "2"
     headMemory: 16Gi
     workerCPU: "48"

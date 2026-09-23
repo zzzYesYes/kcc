@@ -25,6 +25,7 @@ type DeploymentRequest = {
   requestedGpuMemoryUtilization: number;
   requestedPrefixCaching: boolean;
   requestedMtpTokens: number;
+  requestedMaxOngoingRequests: number;
   priority: 'low' | 'normal' | 'high';
 };
 
@@ -39,11 +40,41 @@ type GiteaConfig = {
   allowedRuntimeProfiles: string[];
   artifactKeeperBaseUrl: string;
   stoppedCompositionRef: string;
+  runningCompositionRef: string;
+};
+
+type ServingConfig = {
+  tensorParallelSize: number;
+  dataParallelSize: number;
+  pipelineParallelSize: number;
+  requestedReplicas: number;
+  maxModelLen: number;
+  maxNumSeqs: number;
+  maxNumBatchedTokens: number;
+  gpuMemoryUtilization: number;
+  prefixCaching: boolean;
+  mtpTokens: number;
+  maxOngoingRequests: number;
+};
+
+const certifiedServingValues: Record<keyof ServingConfig, readonly unknown[]> = {
+  tensorParallelSize: [1, 2, 4, 8],
+  dataParallelSize: [1, 2, 4],
+  pipelineParallelSize: [1, 2],
+  requestedReplicas: [1, 2, 4],
+  maxModelLen: [8192, 16384, 32768],
+  maxNumSeqs: [16, 32, 64],
+  maxNumBatchedTokens: [2048, 4096, 8192],
+  gpuMemoryUtilization: [0.8, 0.85, 0.9],
+  prefixCaching: [true, false],
+  mtpTokens: [0, 1, 3],
+  maxOngoingRequests: [16, 32, 64],
 };
 
 type GiteaContentFile = {
   type: string;
   path: string;
+  sha?: string;
   encoding?: string;
   content?: string;
 };
@@ -69,6 +100,7 @@ type DeploymentContract = {
     modelPath: string;
     modelName: string;
     serveConfigV2: string;
+    serving: ServingConfig;
     headCPU: string;
     headMemory: string;
     workerCPU: string;
@@ -102,7 +134,6 @@ type GiteaFileWrite = {
 };
 
 const dnsLabel = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
-
 function readGiteaConfig(config: Config): GiteaConfig {
   const section = config.getConfig('modelPlatform.gitea');
   const apiBaseUrl = section.getString('apiBaseUrl').replace(/\/$/, '');
@@ -124,6 +155,96 @@ function readGiteaConfig(config: Config): GiteaConfig {
       .getString('artifactKeeperBaseUrl')
       .replace(/\/$/, ''),
     stoppedCompositionRef: section.getString('stoppedCompositionRef'),
+    runningCompositionRef: section.getString('runningCompositionRef'),
+  };
+}
+
+/**
+ * Derive the only two serving representations from one allow-listed input.
+ * The structured object is the source of truth; serveConfigV2 is rendered from
+ * the certified RuntimeProfile template so the two cannot drift independently.
+ */
+export function renderServingRuntime(
+  runtime: DeploymentContract['runtime'],
+  input: Pick<
+    DeploymentRequest,
+    | 'requestedTensorParallelSize'
+    | 'requestedDataParallelSize'
+    | 'requestedPipelineParallelSize'
+    | 'requestedReplicas'
+    | 'requestedMaxModelLen'
+    | 'requestedMaxNumSeqs'
+    | 'requestedMaxNumBatchedTokens'
+    | 'requestedGpuMemoryUtilization'
+    | 'requestedPrefixCaching'
+    | 'requestedMtpTokens'
+    | 'requestedMaxOngoingRequests'
+  >,
+) {
+  const serving: ServingConfig = {
+    tensorParallelSize: input.requestedTensorParallelSize,
+    dataParallelSize: input.requestedDataParallelSize,
+    pipelineParallelSize: input.requestedPipelineParallelSize,
+    requestedReplicas: input.requestedReplicas,
+    maxModelLen: input.requestedMaxModelLen,
+    maxNumSeqs: input.requestedMaxNumSeqs,
+    maxNumBatchedTokens: input.requestedMaxNumBatchedTokens,
+    gpuMemoryUtilization: input.requestedGpuMemoryUtilization,
+    prefixCaching: input.requestedPrefixCaching,
+    mtpTokens: input.requestedMtpTokens,
+    maxOngoingRequests: input.requestedMaxOngoingRequests,
+  };
+  for (const [field, allowed] of Object.entries(certifiedServingValues)) {
+    if (!allowed.includes(serving[field as keyof ServingConfig])) {
+      throw new Error(
+        `runtime.serving.${field} is outside the certified allow-list`,
+      );
+    }
+  }
+  if (
+    serving.tensorParallelSize * serving.pipelineParallelSize >
+      runtime.npuPerWorker ||
+    serving.dataParallelSize > serving.requestedReplicas
+  ) {
+    throw new Error(
+      'Requested parallelism is outside the certified runtime profile capacity',
+    );
+  }
+
+  let config: Record<string, any>;
+  try {
+    config = parse(runtime.serveConfigV2) as Record<string, any>;
+  } catch {
+    throw new Error('RuntimeProfile serveConfigV2 is not valid YAML');
+  }
+  const llmConfig = config?.applications?.[0]?.args?.llm_configs?.[0];
+  if (!llmConfig || typeof llmConfig !== 'object') {
+    throw new Error('RuntimeProfile serveConfigV2 has no Ray Serve LLM config');
+  }
+  llmConfig.deployment_config = {
+    ...(llmConfig.deployment_config ?? {}),
+    num_replicas: serving.requestedReplicas,
+    max_ongoing_requests: serving.maxOngoingRequests,
+  };
+  llmConfig.engine_kwargs = {
+    ...(llmConfig.engine_kwargs ?? {}),
+    tensor_parallel_size: serving.tensorParallelSize,
+    data_parallel_size: serving.dataParallelSize,
+    pipeline_parallel_size: serving.pipelineParallelSize,
+    max_model_len: serving.maxModelLen,
+    max_num_seqs: serving.maxNumSeqs,
+    max_num_batched_tokens: serving.maxNumBatchedTokens,
+    gpu_memory_utilization: serving.gpuMemoryUtilization,
+    enable_prefix_caching: serving.prefixCaching,
+    speculative_config: {
+      ...(llmConfig.engine_kwargs?.speculative_config ?? {}),
+      num_speculative_tokens: serving.mtpTokens,
+    },
+  };
+  return {
+    ...runtime,
+    serving,
+    serveConfigV2: stringify(config, { lineWidth: 0 }),
   };
 }
 
@@ -134,7 +255,7 @@ function encodeRepositoryPath(path: string): string {
 async function giteaRequest<T>(options: {
   config: GiteaConfig;
   path: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   body?: unknown;
   acceptedStatuses?: number[];
   signal?: AbortSignal;
@@ -269,6 +390,7 @@ async function loadDeploymentContract(
     modelPath: profileRuntime.modelPath,
     modelName: profileRuntime.modelName,
     serveConfigV2: profileRuntime.serveConfigV2,
+    serving: profileRuntime.serving,
     headCPU: profileRuntime.headCPU ?? '2',
     headMemory: profileRuntime.headMemory ?? '8Gi',
     workerCPU: profileRuntime.workerCPU ?? profileRequests.cpu,
@@ -334,6 +456,7 @@ function createDeploymentRequestAction(config: Config) {
         requestedGpuMemoryUtilization: z => z.number().min(0.5).max(0.98),
         requestedPrefixCaching: z => z.boolean(),
         requestedMtpTokens: z => z.number().int().min(0).max(8),
+        requestedMaxOngoingRequests: z => z.number().int().min(1).max(1024),
         priority: z => z.enum(['low', 'normal', 'high']),
       },
       output: {
@@ -372,6 +495,7 @@ function createDeploymentRequestAction(config: Config) {
         input.runtimeProfileRef,
         ctx.signal,
       );
+      const runtime = renderServingRuntime(contract.runtime, input);
 
       const manifestPath = `environments/production/modeldeployments/${input.deploymentName}.yaml`;
       const contentPath = `${repositoryPrefix}/contents/${encodeRepositoryPath(
@@ -464,7 +588,7 @@ function createDeploymentRequestAction(config: Config) {
             visibility: input.visibility,
           },
           artifact: contract.artifact,
-          runtime: contract.runtime,
+          runtime,
           cache: contract.cache,
         },
       };
@@ -504,7 +628,7 @@ function createDeploymentRequestAction(config: Config) {
                 '- Execution mode: `declarative-stopped`',
                 `- Requested TP/DP/PP/replicas: ${input.requestedTensorParallelSize}/${input.requestedDataParallelSize}/${input.requestedPipelineParallelSize}/${input.requestedReplicas}`,
                 `- Context/concurrency/batch: ${input.requestedMaxModelLen}/${input.requestedMaxNumSeqs}/${input.requestedMaxNumBatchedTokens}`,
-                `- Memory/prefix cache/MTP: ${input.requestedGpuMemoryUtilization}/${input.requestedPrefixCaching}/${input.requestedMtpTokens}`,
+                `- Memory/prefix cache/MTP/max ongoing: ${input.requestedGpuMemoryUtilization}/${input.requestedPrefixCaching}/${input.requestedMtpTokens}/${input.requestedMaxOngoingRequests}`,
                 `- Runtime profile: ${input.runtimeProfileRef}`,
                 '- Runtime/NPU creation: remains stopped until a reviewed Argo CD sync',
                 '',
@@ -567,7 +691,7 @@ function createDeploymentRequestAction(config: Config) {
   });
 }
 
-function createStartInferenceAction(config: Config) {
+export function createStartInferenceAction(config: Config) {
   const gitea = readGiteaConfig(config);
   const repositoryPrefix = `/api/v1/repos/${encodeURIComponent(
     gitea.owner,
@@ -614,17 +738,20 @@ function createStartInferenceAction(config: Config) {
         acceptedStatuses: [200, 404],
         signal: ctx.signal,
       });
-      if (existing.status !== 200 || !existing.value?.content) {
+      if (
+        existing.status !== 200 ||
+        !existing.value?.content ||
+        !existing.value.sha
+      ) {
         throw new Error(
-          `Deployment request ${input.deploymentName} does not exist on ${
-            gitea.baseBranch
-          }; only an existing stopped deployment can be started`,
+          `Deployment request ${input.deploymentName} does not exist on ${gitea.baseBranch}; only an existing stopped deployment can be started`,
         );
       }
+      const existingFile = existing.value;
       let document;
       try {
         document = parse(
-          Buffer.from(existing.value.content, 'base64').toString('utf8'),
+          Buffer.from(existingFile.content!, 'base64').toString('utf8'),
         ) as Record<string, any>;
       } catch {
         throw new Error('Existing deployment request is not valid YAML');
@@ -643,11 +770,11 @@ function createStartInferenceAction(config: Config) {
         );
       }
       if (
-        spec.compositionRef?.name !==
-        'modeldeployment-qwen38-ray-v1alpha1'
+        spec.compositionRef?.name !== gitea.stoppedCompositionRef ||
+        spec.crossplane?.compositionRef?.name !== gitea.stoppedCompositionRef
       ) {
         throw new Error(
-          'Only a request bound to the certified Ray runtime composition can be started',
+          'Only a request bound to the certified stopped composition can be started',
         );
       }
       const profileRef = spec.runtimeProfileRef as string;
@@ -691,20 +818,31 @@ function createStartInferenceAction(config: Config) {
         .replace(/^user:[^/]+\//, '')
         .replace(/[^A-Za-z0-9_.-]/g, '-');
       const npuPerWorker = spec.runtime?.npuPerWorker;
+      const serving = spec.runtime?.serving as Partial<ServingConfig> | undefined;
+      const requestedReplicas = serving?.requestedReplicas;
       if (typeof npuPerWorker !== 'number' || npuPerWorker <= 0) {
         throw new Error(
           'runtime npuPerWorker is missing; refusing to generate a running request',
         );
       }
-      annotations[`${prefix}effective-tensor-parallel-size`] = String(
-        npuPerWorker,
-      );
-      annotations[`${prefix}effective-replicas`] = '1';
-      annotations[`${prefix}effective-npu-per-replica`] = String(
-        npuPerWorker,
-      );
+      if (
+        !Number.isInteger(requestedReplicas) ||
+        requestedReplicas === undefined ||
+        requestedReplicas < 1 ||
+        requestedReplicas > 4
+      ) {
+        throw new Error(
+          'runtime.serving.requestedReplicas must be an approved value before Start',
+        );
+      }
+      annotations[`${prefix}effective-tensor-parallel-size`] =
+        String(serving?.tensorParallelSize);
+      annotations[`${prefix}effective-replicas`] = String(requestedReplicas);
+      annotations[`${prefix}effective-npu-per-replica`] = String(npuPerWorker);
       spec.desiredState = 'Running';
-      spec.runtime.workerReplicas = 1;
+      spec.runtime.workerReplicas = requestedReplicas;
+      spec.compositionRef = { name: gitea.runningCompositionRef };
+      spec.crossplane.compositionRef = { name: gitea.runningCompositionRef };
 
       const yaml = stringify(document, { lineWidth: 0 });
 
@@ -714,11 +852,12 @@ function createStartInferenceAction(config: Config) {
           const fileWrite = await giteaRequest<GiteaFileWrite>({
             config: gitea,
             path: contentPath,
-            method: 'POST',
-            acceptedStatuses: [201],
+            method: 'PUT',
+            acceptedStatuses: [200, 201],
             body: {
               branch: gitea.baseBranch,
               new_branch: branch,
+              sha: existingFile.sha,
               content: Buffer.from(yaml, 'utf8').toString('base64'),
               message: `request start inference ${input.deploymentName} (${startRequestId})`,
             },
@@ -740,8 +879,8 @@ function createStartInferenceAction(config: Config) {
                 `- Start request ID: \`${startRequestId}\``,
                 `- Requested-by: \`${initiator}\``,
                 '- Desired state change: `Stopped` -> `Running`',
-                `- workerReplicas change: \`0\` -> \`1\` (${npuPerWorker} NPU per worker)`,
-                '- Runtime profile: ' + profileRef,
+                `- workerReplicas change: \`0\` -> \`${requestedReplicas}\` (${npuPerWorker} NPU per worker)`,
+                `- Runtime profile: ${profileRef}`,
                 '- The Tekton capacity gate must pass inside an approved running window before this PR can merge.',
                 '',
                 'Stop requests always take priority over new starts.',
@@ -800,6 +939,231 @@ function createStartInferenceAction(config: Config) {
   });
 }
 
+export function createStopInferenceAction(config: Config) {
+  const gitea = readGiteaConfig(config);
+  const repositoryPrefix = `/api/v1/repos/${encodeURIComponent(
+    gitea.owner,
+  )}/${encodeURIComponent(gitea.repository)}`;
+
+  return createTemplateAction({
+    id: 'model-platform:gitea-stop-inference-pr',
+    description:
+      'Open a constrained Stop update for an existing Running ModelDeployment. Stop requests require no NPU capacity window and take priority over new starts.',
+    supportsDryRun: false,
+    schema: {
+      input: {
+        deploymentName: z => z.string().min(1).max(40).regex(dnsLabel),
+        stopReason: z => z.string().min(1).max(512).optional(),
+      },
+      output: {
+        pullRequestUrl: z => z.string().url(),
+        pullRequestNumber: z => z.number().int().positive(),
+        branch: z => z.string(),
+        manifestPath: z => z.string(),
+        stopRequestId: z => z.string(),
+        executionMode: z => z.string(),
+      },
+    },
+    async handler(ctx) {
+      const input = ctx.input as {
+        deploymentName: string;
+        stopReason?: string;
+      };
+      const initiator = ctx.user?.ref;
+      if (!initiator || !gitea.allowedInitiators.includes(initiator)) {
+        throw new Error(
+          'Current Backstage identity is not approved to stop inference',
+        );
+      }
+
+      const manifestPath = `environments/production/modeldeployments/${input.deploymentName}.yaml`;
+      const contentPath = `${repositoryPrefix}/contents/${encodeRepositoryPath(
+        manifestPath,
+      )}`;
+      const existing = await giteaRequest<GiteaContentFile>({
+        config: gitea,
+        path: `${contentPath}?ref=${encodeURIComponent(gitea.baseBranch)}`,
+        acceptedStatuses: [200, 404],
+        signal: ctx.signal,
+      });
+      if (
+        existing.status !== 200 ||
+        !existing.value?.content ||
+        !existing.value.sha
+      ) {
+        throw new Error(
+          `Deployment request ${input.deploymentName} does not exist on ${gitea.baseBranch}; only an existing running deployment can be stopped`,
+        );
+      }
+      const existingFile = existing.value;
+
+      let document;
+      try {
+        document = parse(
+          Buffer.from(existingFile.content!, 'base64').toString('utf8'),
+        ) as Record<string, any>;
+      } catch {
+        throw new Error('Existing deployment request is not valid YAML');
+      }
+
+      const prefix = 'platform.example.com/';
+      const annotations = document.metadata?.annotations ?? {};
+      const spec = document.spec ?? {};
+      if (
+        annotations[`${prefix}request-mode`] !== 'declarative-running' ||
+        spec.desiredState !== 'Running' ||
+        spec.runtime?.workerReplicas !== 1
+      ) {
+        throw new Error(
+          'Only a declarative-running request with workerReplicas=1 can be stopped',
+        );
+      }
+      if (
+        spec.compositionRef?.name !== gitea.runningCompositionRef ||
+        spec.crossplane?.compositionRef?.name !== gitea.runningCompositionRef
+      ) {
+        throw new Error(
+          'Only a request bound to the certified Ray runtime composition can be stopped',
+        );
+      }
+      const profileRef = spec.runtimeProfileRef as string;
+      if (!gitea.allowedRuntimeProfiles.includes(profileRef)) {
+        throw new Error(
+          'runtimeProfileRef is outside the approved runtime allow-list',
+        );
+      }
+
+      const stopRequestId = `stop-${ctx.task.id
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 57)}`;
+      const branch = `backstage/modeldeployment-stopping-${input.deploymentName}`;
+      const openPulls = await giteaRequest<
+        { number: number; head?: { ref?: string } }[]
+      >({
+        config: gitea,
+        path: `${repositoryPrefix}/pulls?state=open`,
+        acceptedStatuses: [200],
+        signal: ctx.signal,
+      });
+      const clash = (openPulls.value ?? []).find(
+        pull => pull.head?.ref === branch,
+      );
+      if (clash) {
+        throw new Error(
+          `A stop-inference request for ${input.deploymentName} is already open as PR #${clash.number}`,
+        );
+      }
+
+      annotations[`${prefix}request-mode`] = 'declarative-stopped';
+      annotations[`${prefix}effective-tensor-parallel-size`] = '0';
+      annotations[`${prefix}effective-replicas`] = '0';
+      annotations[`${prefix}effective-npu-per-replica`] = '0';
+      delete annotations[`${prefix}requested-start-id`];
+      delete annotations[`${prefix}requested-start-reason`];
+      document.metadata.labels[`${prefix}requested-by`] = initiator
+        .replace(/^user:[^/]+\//, '')
+        .replace(/[^A-Za-z0-9_.-]/g, '-');
+      spec.desiredState = 'Stopped';
+      spec.runtime.workerReplicas = 0;
+      spec.compositionRef = { name: gitea.stoppedCompositionRef };
+      spec.crossplane.compositionRef = {
+        name: gitea.stoppedCompositionRef,
+      };
+
+      const yaml = stringify(document, { lineWidth: 0 });
+      const pullRequest = await ctx.checkpoint({
+        key: `gitea-stop-pr.${manifestPath}`,
+        fn: async () => {
+          const fileWrite = await giteaRequest<GiteaFileWrite>({
+            config: gitea,
+            path: contentPath,
+            method: 'PUT',
+            acceptedStatuses: [200, 201],
+            body: {
+              branch: gitea.baseBranch,
+              new_branch: branch,
+              sha: existingFile.sha,
+              content: Buffer.from(yaml, 'utf8').toString('base64'),
+              message: `request stop inference ${input.deploymentName} (${stopRequestId})`,
+            },
+            signal: ctx.signal,
+          });
+
+          const created = await giteaRequest<GiteaPullRequest>({
+            config: gitea,
+            path: `${repositoryPrefix}/pulls`,
+            method: 'POST',
+            acceptedStatuses: [201],
+            body: {
+              base: gitea.baseBranch,
+              head: branch,
+              title: `ModelDeployment Stop: ${input.deploymentName}`,
+              body: [
+                'Created by the constrained Backstage stop-inference action.',
+                '',
+                `- Stop request ID: \`${stopRequestId}\``,
+                `- Requested-by: \`${initiator}\``,
+                '- Desired state change: `Running` -> `Stopped`',
+                '- workerReplicas change: `1` -> `0`',
+                `- Stop reason: ${input.stopReason ?? 'not supplied'}`,
+                '- Stop requests bypass the Running capacity window and take priority over new starts.',
+              ].join('\n'),
+            },
+            signal: ctx.signal,
+          });
+          if (!created.value) {
+            throw new Error('Gitea returned no pull request object');
+          }
+          const headSha =
+            created.value.head?.sha ?? fileWrite.value?.commit.sha;
+          try {
+            if (!headSha) {
+              throw new Error('Gitea returned no head commit SHA');
+            }
+            await giteaRequest({
+              config: gitea,
+              path: `${repositoryPrefix}/statuses/${encodeURIComponent(
+                headSha,
+              )}`,
+              method: 'POST',
+              acceptedStatuses: [201],
+              body: {
+                state: 'pending',
+                context: 'tekton/model-platform-policy',
+                description: 'Waiting for Tekton stop validation',
+              },
+              signal: ctx.signal,
+            });
+          } catch {
+            ctx.logger.warn(
+              `PR #${created.value.number} was created, but pending status publication failed`,
+            );
+          }
+          return {
+            number: created.value.number,
+            url: created.value.html_url,
+          };
+        },
+      });
+
+      if (!pullRequest) {
+        throw new Error('Backstage checkpoint returned no pull request result');
+      }
+      ctx.logger.info(
+        `Created stop-inference PR #${pullRequest.number} for ${input.deploymentName} (${stopRequestId})`,
+      );
+      ctx.output('pullRequestUrl', pullRequest.url);
+      ctx.output('pullRequestNumber', pullRequest.number);
+      ctx.output('branch', branch);
+      ctx.output('manifestPath', manifestPath);
+      ctx.output('stopRequestId', stopRequestId);
+      ctx.output('executionMode', 'declarative-stopped');
+    },
+  });
+}
+
 export default createBackendModule({
   pluginId: 'scaffolder',
   moduleId: 'model-platform-gitea-deployment-request',
@@ -812,6 +1176,7 @@ export default createBackendModule({
       async init({ config, scaffolderActions }) {
         scaffolderActions.addActions(createDeploymentRequestAction(config));
         scaffolderActions.addActions(createStartInferenceAction(config));
+        scaffolderActions.addActions(createStopInferenceAction(config));
       },
     });
   },

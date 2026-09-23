@@ -25,6 +25,103 @@ def load_yaml(path: pathlib.Path) -> dict:
     return document
 
 
+def validate_stopped_composition(
+    path: pathlib.Path, composition: dict, errors: list[str]
+) -> None:
+    """Allow one audited status ConfigMap and forbid stopped runtime resources."""
+
+    prefix = f"{path}: stopped Composition"
+    expected_names = {
+        "modeldeployment-stopped-composition.yaml": "modeldeployment-stopped-v1alpha1",
+        "modeldeployment-stopped-v2-composition.yaml": "modeldeployment-stopped-v2",
+    }
+    if path.name not in expected_names:
+        errors.append(f"{prefix}: unexpected Composition file")
+    if composition.get("apiVersion") != "apiextensions.crossplane.io/v1":
+        errors.append(f"{prefix}: apiVersion must be apiextensions.crossplane.io/v1")
+    if composition.get("metadata", {}).get("name") != expected_names.get(path.name):
+        errors.append(f"{prefix}: metadata.name is fixed")
+    spec = composition.get("spec", {})
+    if spec.get("compositeTypeRef") != {
+        "apiVersion": "platform.example.com/v1alpha1",
+        "kind": "ModelDeployment",
+    }:
+        errors.append(f"{prefix}: compositeTypeRef must target ModelDeployment")
+    pipeline = spec.get("pipeline", [])
+    if len(pipeline) != 1:
+        errors.append(f"{prefix}: exactly one pipeline step is required")
+        return
+    step = pipeline[0]
+    if step.get("functionRef", {}).get("name") != "function-patch-and-transform":
+        errors.append(f"{prefix}: only function-patch-and-transform is allowed")
+    resources = step.get("input", {}).get("resources", [])
+    if len(resources) != 1:
+        errors.append(f"{prefix}: exactly one status ConfigMap is required")
+        return
+    resource = resources[0]
+    base = resource.get("base", {})
+    if resource.get("name") != "release-status" or base.get("kind") != "ConfigMap":
+        errors.append(f"{prefix}: the only resource must be release-status ConfigMap")
+    forbidden_kinds = {
+        "Deployment",
+        "Job",
+        "PersistentVolumeClaim",
+        "RayService",
+        "RayCluster",
+        "Service",
+        "NetworkPolicy",
+        "Object",
+    }
+    if base.get("kind") in forbidden_kinds:
+        errors.append(f"{prefix}: runtime or storage resources are forbidden")
+    data = base.get("data", {})
+    expected = {
+        "phase": "Stopped",
+        "desiredState": "Stopped",
+        "runtimeEnabled": "false",
+        "cacheEnabled": "false",
+        "npuRequested": "0",
+    }
+    if any(data.get(key) != value for key, value in expected.items()):
+        errors.append(f"{prefix}: stopped status data must declare zero runtime/NPU")
+    if resource.get("readinessChecks") != [{"type": "None"}]:
+        errors.append(f"{prefix}: status ConfigMap must use readinessChecks None")
+
+
+def validate_modeldeployment_xrd(
+    path: pathlib.Path, xrd: dict, errors: list[str]
+) -> None:
+    """Keep the served v1alpha1 API backward compatible while admitting v2."""
+
+    prefix = f"{path}: ModelDeployment XRD"
+    if path.name != "modeldeployment-xrd.yaml":
+        errors.append(f"{prefix}: unexpected XRD file")
+    if xrd.get("apiVersion") != "apiextensions.crossplane.io/v2":
+        errors.append(f"{prefix}: apiVersion must be apiextensions.crossplane.io/v2")
+    if xrd.get("metadata", {}).get("name") != "modeldeployments.platform.example.com":
+        errors.append(f"{prefix}: metadata.name must be modeldeployments.platform.example.com")
+    versions = xrd.get("spec", {}).get("versions", [])
+    version = next((item for item in versions if item.get("name") == "v1alpha1"), {})
+    schema = version.get("schema", {}).get("openAPIV3Schema", {})
+    composition_names = (
+        schema.get("properties", {})
+        .get("spec", {})
+        .get("properties", {})
+        .get("compositionRef", {})
+        .get("properties", {})
+        .get("name", {})
+        .get("enum", [])
+    )
+    required = {
+        "modeldeployment-stopped-v1alpha1",
+        "modeldeployment-qwen38-ray-v1alpha1",
+        "modeldeployment-stopped-v2",
+        "modeldeployment-qwen38-ray-v2",
+    }
+    if not required.issubset(set(composition_names)):
+        errors.append(f"{prefix}: v1 and v2 composition names must be allowed")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--requests-dir", type=pathlib.Path, required=True)
@@ -61,12 +158,24 @@ def main() -> int:
         requests = sorted(args.requests_dir.glob("*.yaml"))
 
     seen_names: set[str] = set()
+    deployment_count = 0
     for path in requests:
         try:
             document = load_yaml(path)
         except Exception as error:
             errors.append(f"{path}: invalid YAML: {error}")
             continue
+
+        if document.get("kind") == "Composition":
+            validate_stopped_composition(path, document, errors)
+            continue
+        if document.get("kind") == "CompositeResourceDefinition":
+            validate_modeldeployment_xrd(path, document, errors)
+            continue
+        if document.get("kind") != "ModelDeployment":
+            errors.append(f"{path}: only ModelDeployment, the stopped Composition, or the XRD is allowed")
+            continue
+        deployment_count += 1
 
         for error in sorted(validator.iter_errors(document), key=lambda item: list(item.path)):
             location = ".".join(str(part) for part in error.path) or "<root>"
@@ -103,7 +212,7 @@ def main() -> int:
         print("modeldeployment_validation=FAIL", file=sys.stderr)
         return 1
 
-    print(f"modeldeployment_validation=PASS requests={len(requests)}")
+    print(f"modeldeployment_validation=PASS requests={deployment_count}")
     return 0
 
 
@@ -139,15 +248,31 @@ def validate_qwen38_release(
             f"{prefix}: crossplane.compositionRef.name must match compositionRef.name"
         )
     control_plane_only = composition == "modeldeployment-control-plane-v1alpha1"
+    stopped_composition = composition in {
+        "modeldeployment-stopped-v1alpha1",
+        "modeldeployment-stopped-v2",
+    }
+    candidate_v2 = composition in {
+        "modeldeployment-stopped-v2",
+        "modeldeployment-qwen38-ray-v2",
+    }
     if composition not in {
         "modeldeployment-control-plane-v1alpha1",
         "modeldeployment-qwen38-ray-v1alpha1",
+        "modeldeployment-stopped-v1alpha1",
+        "modeldeployment-qwen38-ray-v2",
+        "modeldeployment-stopped-v2",
     }:
         errors.append(
             f"{prefix}: compositionRef must select control-plane or qwen38 Ray Composition"
         )
     placement = spec.get("placement", {})
-    if control_plane_only:
+    if stopped_composition:
+        if spec.get("desiredState") != "Stopped":
+            errors.append(f"{prefix}: stopped Composition requires desiredState=Stopped")
+        if spec.get("runtime", {}).get("workerReplicas") != 0:
+            errors.append(f"{prefix}: stopped Composition requires workerReplicas=0")
+    elif control_plane_only:
         if spec.get("desiredState") != "Stopped":
             errors.append(f"{prefix}: control-plane composition requires desiredState=Stopped")
         if placement.get("acceleratorPool") != "control-plane-only":
@@ -161,22 +286,23 @@ def validate_qwen38_release(
             errors.append(f"{prefix}: placement.acceleratorPool must be ascend-a3")
         selector = placement.get("nodeSelector", {})
         if selector != {
+            "accelerator-type": "module-a3-16",
             "kubernetes.io/arch": "arm64",
             "kubernetes.io/hostname": "a3-server-00",
             "node.kubernetes.io/npu.chip.name": "Ascend910",
         }:
-            errors.append(f"{prefix}: nodeSelector must pin a3-server-00/arm64/Ascend910")
+            errors.append(
+                f"{prefix}: nodeSelector must pin module-a3-16/"
+                "a3-server-00/arm64/Ascend910"
+            )
 
         allocation = placement.get("staticDeviceAllocation", "")
         devices = allocation.split(",") if allocation else []
         if len(devices) != len(set(devices)):
             errors.append(f"{prefix}: staticDeviceAllocation must not contain duplicate devices")
-        if runtime_ref == "qwen38-w8a8-ray-ascend-910b3-tp2-v1" and devices != [
-            "Ascend910-8",
-            "Ascend910-9",
-        ]:
+        if runtime_ref == "qwen38-w8a8-ray-ascend-910b3-tp2-v1" and allocation:
             errors.append(
-                f"{prefix}: A3 TP2 release must be isolated to Ascend910-8,Ascend910-9"
+                f"{prefix}: A3 TP2 release must use Volcano dynamic device allocation"
             )
 
     artifact = spec.get("artifact", {})
@@ -233,22 +359,33 @@ def validate_qwen38_release(
         errors.append(
             f"{prefix}: runtime.npuPerWorker must be {expected_npu} for {runtime_ref}"
         )
-    if runtime.get("workerReplicas") not in {0, 1}:
-        errors.append(f"{prefix}: runtime.workerReplicas must be 0 or 1")
+    allowed_workers = {0, 1, 2, 4} if candidate_v2 else {0, 1}
+    if runtime.get("workerReplicas") not in allowed_workers:
+        errors.append(f"{prefix}: runtime.workerReplicas is outside the certified allow-list")
     if runtime_ref == "qwen38-w8a8-ray-ascend-910b3-tp2-v1" and runtime.get("workerCPU") != "48":
         errors.append(f"{prefix}: A3 TP2 runtime.workerCPU must be 48 to preserve node headroom")
     if spec.get("desiredState") == "Stopped" and runtime.get("workerReplicas") != 0:
         errors.append(f"{prefix}: Stopped releases must have workerReplicas=0")
-    if spec.get("desiredState") == "Running" and runtime.get("workerReplicas") != 1:
-        errors.append(f"{prefix}: Running releases must have workerReplicas=1")
+    if spec.get("desiredState") == "Running":
+        expected_workers = (
+            runtime.get("serving", {}).get("requestedReplicas")
+            if candidate_v2
+            else 1
+        )
+        if runtime.get("workerReplicas") != expected_workers:
+            errors.append(f"{prefix}: Running releases must match runtime.serving.requestedReplicas")
     annotations = deployment.get("metadata", {}).get("annotations", {})
     if spec.get("desiredState") == "Stopped":
         expected_effective = ("declarative-stopped", "0", "0", "0")
     else:
         expected_effective = (
             "declarative-running",
-            str(expected_npu),
-            "1",
+            str(runtime.get("serving", {}).get("tensorParallelSize"))
+            if candidate_v2
+            else str(expected_npu),
+            str(runtime.get("serving", {}).get("requestedReplicas"))
+            if candidate_v2
+            else "1",
             str(expected_npu),
         )
     actual_effective = (
@@ -293,8 +430,11 @@ def validate_qwen38_release(
             errors.append(f"{prefix}: XR runtime.modelPath differs from RuntimeProfile catalog")
         if runtime.get("modelName") != profile_runtime.get("modelName"):
             errors.append(f"{prefix}: XR runtime.modelName differs from RuntimeProfile catalog")
-        if runtime.get("serveConfigV2") != profile_runtime.get("serveConfigV2"):
-            errors.append(f"{prefix}: XR runtime.serveConfigV2 differs from RuntimeProfile catalog")
+        if not candidate_v2:
+            if runtime.get("serveConfigV2") != profile_runtime.get("serveConfigV2"):
+                errors.append(f"{prefix}: XR runtime.serveConfigV2 differs from RuntimeProfile catalog")
+            if runtime.get("serving") != profile_runtime.get("serving"):
+                errors.append(f"{prefix}: XR runtime.serving differs from RuntimeProfile catalog")
         for cache_field in (
             "revision",
             "image",
@@ -329,6 +469,7 @@ def validate_qwen38_release(
                 prefix,
                 runtime.get("serveConfigV2"),
                 runtime.get("modelPath"),
+                runtime.get("serving"),
                 errors,
             )
 
@@ -337,6 +478,7 @@ def validate_qwen38_tp2_serve_config(
     prefix: str,
     serve_config: object,
     model_path: object,
+    serving: object,
     errors: list[str],
 ) -> None:
     """Validate the Ray Serve LLM contract that replaces the Docker flags."""
@@ -362,9 +504,35 @@ def validate_qwen38_tp2_serve_config(
     if llm_config.get("model_loading_config", {}).get("model_source") != model_path:
         errors.append(f"{prefix}: TP2 model_source must match runtime.modelPath")
 
+    if not isinstance(serving, dict):
+        errors.append(f"{prefix}: runtime.serving must be the structured serving source of truth")
+        return
+    allowed = {
+        "tensorParallelSize": {1, 2, 4, 8},
+        "dataParallelSize": {1, 2, 4},
+        "pipelineParallelSize": {1, 2},
+        "requestedReplicas": {1, 2, 4},
+        "maxModelLen": {8192, 16384, 32768},
+        "maxNumSeqs": {16, 32, 64},
+        "maxNumBatchedTokens": {2048, 4096, 8192},
+        "gpuMemoryUtilization": {0.8, 0.85, 0.9},
+        "prefixCaching": {True, False},
+        "mtpTokens": {0, 1, 3},
+        "maxOngoingRequests": {16, 32, 64},
+    }
+    for field, values in allowed.items():
+        if serving.get(field) not in values:
+            errors.append(f"{prefix}: runtime.serving.{field} is outside the certified allow-list")
+    if serving.get("tensorParallelSize", 0) * serving.get("pipelineParallelSize", 0) > 2:
+        errors.append(f"{prefix}: TP × PP exceeds the certified two-NPU worker profile")
+    if serving.get("dataParallelSize", 0) > serving.get("requestedReplicas", 0):
+        errors.append(f"{prefix}: DP cannot exceed requested replicas")
+
     deployment = llm_config.get("deployment_config", {})
-    if deployment.get("num_replicas") != 1 or deployment.get("max_ongoing_requests") != 64:
-        errors.append(f"{prefix}: TP2 Ray Serve deployment must be 1 replica with 64 max ongoing requests")
+    if deployment.get("num_replicas") != serving.get("requestedReplicas"):
+        errors.append(f"{prefix}: serveConfigV2 num_replicas must match runtime.serving")
+    if deployment.get("max_ongoing_requests") != serving.get("maxOngoingRequests"):
+        errors.append(f"{prefix}: serveConfigV2 max_ongoing_requests must match runtime.serving")
 
     if "placement_group_config" in llm_config:
         errors.append(f"{prefix}: Ray 2.48 LLMConfig does not accept placement_group_config")
@@ -373,27 +541,36 @@ def validate_qwen38_tp2_serve_config(
 
     engine = llm_config.get("engine_kwargs", {})
     expected_engine = {
-        "tensor_parallel_size": 2,
-        "data_parallel_size": 1,
-        "pipeline_parallel_size": 1,
+        "tensor_parallel_size": serving.get("tensorParallelSize"),
+        "data_parallel_size": serving.get("dataParallelSize"),
+        "pipeline_parallel_size": serving.get("pipelineParallelSize"),
         "distributed_executor_backend": "ray",
         "quantization": "ascend",
-        "max_model_len": 32768,
-        "max_num_seqs": 64,
-        "max_num_batched_tokens": 8192,
-        "gpu_memory_utilization": 0.9,
-        "enable_prefix_caching": True,
         "trust_remote_code": True,
-        "speculative_config": {
-            "method": "qwen3_5_mtp",
-            "num_speculative_tokens": 3,
-            "enforce_eager": True,
-        },
         "compilation_config": {"cudagraph_mode": "FULL_DECODE_ONLY"},
     }
     for key, expected in expected_engine.items():
         if engine.get(key) != expected:
             errors.append(f"{prefix}: TP2 engine_kwargs.{key} must equal {expected!r}")
+    expected_dynamic = {
+        "max_model_len": serving.get("maxModelLen"),
+        "max_num_seqs": serving.get("maxNumSeqs"),
+        "max_num_batched_tokens": serving.get("maxNumBatchedTokens"),
+        "gpu_memory_utilization": serving.get("gpuMemoryUtilization"),
+        "enable_prefix_caching": serving.get("prefixCaching"),
+    }
+    for key, expected in expected_dynamic.items():
+        if engine.get(key) != expected:
+            errors.append(f"{prefix}: serveConfigV2 engine_kwargs.{key} must match runtime.serving")
+    speculative = engine.get("speculative_config", {})
+    if speculative != {
+        "method": "qwen3_5_mtp",
+        "num_speculative_tokens": serving.get("mtpTokens"),
+        "enforce_eager": True,
+    }:
+        errors.append(
+            f"{prefix}: serveConfigV2 speculative_config must match runtime.serving.mtpTokens"
+        )
 
 
 if __name__ == "__main__":

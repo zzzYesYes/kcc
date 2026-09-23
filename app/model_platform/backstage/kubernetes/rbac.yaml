@@ -69,9 +69,14 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["platform.example.com"]
     resources: ["modeldeployments"]
-    verbs: ["get", "list", "watch"]
+    # Direct operations can patch only the namespaced ModelDeployment CR. They
+    # cannot write Pods, Ray objects, Secrets, PVCs, Compositions or manifests.
+    verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["ray.io"]
-    resources: ["rayservices"]
+    resources: ["rayservices", "rayclusters"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
@@ -91,30 +96,27 @@ roleRef:
   kind: Role
   name: backstage-read-only
 ---
-# Backstage may observe the dedicated artifact-publish PipelineRuns and their
-# TaskRun pods, but it cannot create/delete/patch Tekton or Kubernetes objects.
-# Creation is mediated by the EventListener and its own narrowly scoped SA.
+# Dashboard pipeline status is read-only and scoped to the model configuration
+# namespace.  The Backstage service account cannot create or modify Tekton runs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: backstage-artifact-publish-read-only
-  namespace: artifact-publish
+  name: backstage-model-platform-ci-read-only
+  namespace: model-platform-ci
 rules:
   - apiGroups: ["tekton.dev"]
     resources: ["pipelineruns", "taskruns"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods/log"]
+    resources: ["configmaps"]
+    resourceNames: ["model-platform-running-gate-policy"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: backstage-artifact-publish-read-only
-  namespace: artifact-publish
+  name: backstage-model-platform-ci-read-only
+  namespace: model-platform-ci
 subjects:
   - kind: ServiceAccount
     name: backstage
@@ -122,7 +124,34 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: backstage-artifact-publish-read-only
+  name: backstage-model-platform-ci-read-only
+---
+# Argo application state is read-only and is used only to report revision,
+# sync and health; Backstage never requests an Argo sync.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backstage-argocd-read-only
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    resourceNames: ["model-platform-deployment-requests"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backstage-argocd-read-only
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: backstage
+    namespace: backstage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backstage-argocd-read-only
 ---
 # Read-only discovery of the platform-managed K12 release. Run launch goes to
 # the allow-listed Dagster GraphQL endpoint and never writes Kubernetes.
