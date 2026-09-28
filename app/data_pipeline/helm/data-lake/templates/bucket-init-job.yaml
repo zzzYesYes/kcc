@@ -1,0 +1,48 @@
+{{- if .Values.bucketInit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "data-lake.fullname" . }}-bucket-init
+  namespace: {{ .Values.minio.namespace }}
+  labels:
+    {{- include "data-lake.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bucket-init
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-weight: "10"
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "data-lake.labels" . | nindent 8 }}
+        app.kubernetes.io/component: bucket-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: "{{ .Values.bucketInit.image.repository }}:{{ .Values.bucketInit.image.tag }}"
+          imagePullPolicy: {{ .Values.bucketInit.image.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              until mc alias set lake "$S3_ENDPOINT_URL" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do sleep 5; done
+              {{- range .Values.s3.buckets }}
+              mc mb --ignore-existing "lake/{{ . }}"
+              {{- end }}
+              mc ls lake
+          env:
+            - name: S3_ENDPOINT_URL
+              value: {{ .Values.s3.endpoint | quote }}
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: MINIO_ROOT_PASSWORD
+{{- end }}

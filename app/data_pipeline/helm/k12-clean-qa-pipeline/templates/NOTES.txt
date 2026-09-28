@@ -1,0 +1,17 @@
+K12 cleaning/QA pipeline chart rendered successfully.
+
+External prerequisites (not created by this chart):
+  - KubeRay operator and ray.io/v1 RayCluster CRD
+  - Ascend device plugin exposing {{ .Values.ascend.resourceName }}
+  - S3/MinIO endpoint {{ .Values.externalS3.endpoint }}
+  - Secret {{ .Values.externalS3.credentialsSecret.name }} in namespace {{ include "k12-clean-qa.namespace" . }}
+  - Qwen model volume at the configured hostPath/PVC
+
+Dagster:
+  kubectl -n {{ include "k12-clean-qa.namespace" . }} get svc {{ include "k12-clean-qa.fullname" . }}-dagster
+
+Ray Dashboard:
+  kubectl -n {{ include "k12-clean-qa.namespace" . }} port-forward svc/{{ include "k12-clean-qa.rayHeadService" . }} 8265:{{ .Values.ray.head.service.dashboardPort }}
+
+NPU worker groups start at zero replicas. Ray resource demand or the lifecycle
+jobs scale them up; do not set a non-zero default merely to test connectivity.

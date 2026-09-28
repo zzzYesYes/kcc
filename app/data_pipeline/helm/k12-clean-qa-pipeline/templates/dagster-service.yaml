@@ -1,0 +1,23 @@
+{{- if .Values.dagster.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "k12-clean-qa.fullname" . }}-dagster
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dagster
+spec:
+  type: {{ .Values.dagster.service.type }}
+  selector:
+    {{- include "k12-clean-qa.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dagster
+  ports:
+    - name: http
+      port: {{ .Values.dagster.service.port }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.dagster.service.type "NodePort") .Values.dagster.service.nodePort }}
+      nodePort: {{ .Values.dagster.service.nodePort }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,22 @@
+namespace:
+  create: false
+
+dagster:
+  service:
+    type: ClusterIP
+  storage:
+    type: emptyDir
+
+# The smoke profile remains scale-to-zero. Smaller CPU/memory values only make
+# rendered manifests convenient for API validation; no model is started.
+workers:
+  standard:
+    replicas: 0
+    resources:
+      requests: {cpu: "4", memory: 16Gi}
+      limits: {cpu: "4", memory: 16Gi}
+  eightNpu:
+    replicas: 0
+    resources:
+      requests: {cpu: "8", memory: 32Gi}
+      limits: {cpu: "8", memory: 32Gi}

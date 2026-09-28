@@ -1,0 +1,12 @@
+apiVersion: v2
+name: k12-clean-qa-pipeline
+description: Dagster, KubeRay, MinerU and Qwen runtime for the K12 data production pipeline
+type: application
+version: 0.1.0
+appVersion: "stage2-v1.1.0"
+kubeVersion: ">=1.25.0-0"
+annotations:
+  k12.ai/data-lake: external
+  k12.ai/stage1-version: stage1-v1.0.2
+  k12.ai/stage2-version: stage2-v1.1.0
+  k12.ai/prompt-version: k12-qa-zh-v1.2

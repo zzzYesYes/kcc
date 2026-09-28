@@ -1,0 +1,252 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k12-clean-qa.fullname" . }}-config
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+data:
+  dagster.yaml: |
+    storage:
+      sqlite:
+        base_dir: {{ .Values.dagster.dagsterHome }}/storage
+    compute_logs:
+      module: dagster.core.storage.local_compute_log_manager
+      class: LocalComputeLogManager
+      config:
+        base_dir: {{ .Values.dagster.dagsterHome }}/compute_logs
+    run_coordinator:
+      module: dagster.core.run_coordinator
+      class: QueuedRunCoordinator
+    run_launcher:
+      module: dagster.core.launcher
+      class: DefaultRunLauncher
+  stage1.yaml: |
+    ops:
+      resolve_source_manifest:
+        config:
+          source_bucket: {{ .Values.externalS3.buckets.mineru | quote }}
+          source_prefix: {{ .Values.externalS3.prefixes.mineru | quote }}
+          output_bucket: {{ .Values.externalS3.buckets.cleaned | quote }}
+          output_prefix: {{ .Values.stage1.outputPrefix | quote }}
+          selection_manifest_key: {{ .Values.stage1.selectionManifestKey | quote }}
+          count: {{ .Values.stage1.count }}
+          resume: {{ .Values.stage1.resume }}
+          cpu_workers: {{ .Values.stage1.cpuWorkers }}
+          max_document_inflight: {{ .Values.stage1.maxDocumentInflight }}
+          stage1_version: {{ .Values.stage1.version | quote }}
+          automated_validation: {{ .Values.stage1.automatedValidation }}
+          dry_run: {{ .Values.stage1.dryRun }}
+  stage2.yaml: |
+    ops:
+      resolve_stage1_test_manifest:
+        config:
+          stage1_bucket: {{ .Values.externalS3.buckets.cleaned | quote }}
+          stage1_source_prefix: {{ .Values.externalS3.prefixes.stage1 | quote }}
+          output_bucket: {{ .Values.externalS3.buckets.cleaned | quote }}
+          output_prefix: {{ .Values.stage2.outputPrefix | quote }}
+          count: {{ .Values.stage2.count }}
+          resume: {{ .Values.stage2.resume }}
+          document_inflight: {{ .Values.stage2.documentInflight }}
+          block_inflight: {{ .Values.stage2.blockInflight }}
+          generation_max_inflight: {{ .Values.stage2.generationMaxInflight }}
+          judge_max_inflight: {{ .Values.stage2.judgeMaxInflight }}
+          http_pool_size: {{ .Values.stage2.httpPoolSize }}
+          microbatch_size: {{ .Values.stage2.microbatchSize }}
+          judge_batch_size: {{ .Values.stage2.judgeBatchSize }}
+          merge_max_blocks: {{ .Values.stage2.mergeMaxBlocks }}
+          merge_max_chars: {{ .Values.stage2.mergeMaxChars }}
+          chapter_max_units: {{ .Values.stage2.chapterMaxUnits }}
+          document_max_units: {{ .Values.stage2.documentMaxUnits }}
+          max_blocks_per_document: {{ .Values.stage2.maxBlocksPerDocument }}
+          stage2_version: {{ .Values.stage2.version | quote }}
+          prompt_version: {{ .Values.stage2.promptVersion | quote }}
+          qwen_model: {{ .Values.qwen.modelName | quote }}
+          qwen_api_base: "http://127.0.0.1:{{ (index .Values.qwen.endpoints 0).port }}"
+          qwen_api_bases: "{{ range $index, $endpoint := .Values.qwen.endpoints }}{{ if $index }},{{ end }}http://127.0.0.1:{{ $endpoint.port }}{{ end }}"
+          benchmark: {{ .Values.stage2.benchmark }}
+          automated_validation: {{ .Values.stage2.automatedValidation }}
+          dry_run: {{ .Values.stage2.dryRun }}
+  data-contract.yaml: |
+    mineru:
+      bucket: {{ .Values.externalS3.buckets.mineru | quote }}
+      prefix: {{ .Values.externalS3.prefixes.mineru | quote }}
+      backend: {{ .Values.mineru.runtime.backend | quote }}
+      effort: {{ .Values.mineru.runtime.effort | quote }}
+      image_analysis: {{ .Values.mineru.runtime.imageAnalysis }}
+    stage1:
+      bucket: {{ .Values.externalS3.buckets.cleaned | quote }}
+      prefix: {{ .Values.externalS3.prefixes.stage1 | quote }}
+      canonical_record: blocks.jsonl
+      markdown_projection: clean.md
+      success_marker_last: true
+    stage2:
+      bucket: {{ .Values.externalS3.buckets.cleaned | quote }}
+      prefix: {{ .Values.externalS3.prefixes.stage2 | quote }}
+      structured_input_only: true
+      require_judge_for_verified: {{ .Values.stage2.requireJudgeForVerified }}
+    collectors:
+      clean_markdown_prefix: {{ .Values.collectors.cleanMarkdown.outputPrefix | quote }}
+      training_jsonl_prefix: {{ .Values.collectors.trainingJsonl.outputPrefix | quote }}
+      require_verified: {{ .Values.collectors.trainingJsonl.requireVerified }}
+      require_judge_accept: {{ .Values.collectors.trainingJsonl.requireJudgeAccept }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k12-clean-qa.mineruName" . }}-launcher
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mineru
+data:
+  discover_npu_mapping.py: |
+    #!/usr/bin/env python3
+    import json
+    import os
+    import subprocess
+    from pathlib import Path
+
+    physical_ids = set(filter(None, os.environ["MINERU_PHYSICAL_DEVICES"].split(",")))
+    devices = {}
+    output = subprocess.run(
+        ["npu-smi", "info", "-m"], check=True, capture_output=True, text=True
+    ).stdout
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) != 5 or fields[-1] != "Ascend910":
+            continue
+        npu_id, chip_id, logical_id, physical_id, _ = fields
+        if physical_id not in physical_ids:
+            continue
+        device_path = Path(f"/dev/davinci{logical_id}")
+        if not device_path.exists():
+            raise RuntimeError(f"missing {device_path} for physical NPU {physical_id}")
+        devices[physical_id] = {
+            "physical_id": int(physical_id),
+            "logical_id": int(logical_id),
+            "npu_id": int(npu_id),
+            "chip_id": int(chip_id),
+            "device_path": str(device_path),
+            "device_realpath": os.path.realpath(device_path),
+        }
+    missing = physical_ids - devices.keys()
+    if missing:
+        raise RuntimeError(f"physical NPU mapping missing for {sorted(missing)}")
+    path = Path("/tmp/mineru-runtime/npu-mapping.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"devices": devices, "npu_smi_mapping": output}, indent=2))
+    print(json.dumps(devices, indent=2))
+  start_mineru.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    state_dir=/tmp/mineru-runtime
+    mkdir -p "$state_dir"
+    python3 /opt/k12-launcher/discover_npu_mapping.py
+    mapping_value() {
+      python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["devices"][sys.argv[2]]["logical_id"])' \
+        "$state_dir/npu-mapping.json" "$1"
+    }
+    wait_healthy() {
+      local port=$1 pid=$2
+      for _ in $(seq 1 360); do
+        kill -0 "$pid" 2>/dev/null || return 1
+        curl --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:$port/health" >/dev/null && return 0
+        sleep 1
+      done
+      return 1
+    }
+    start_service() {
+      local name=$1 physical_id=$2 port=$3 cpu_set=$4 logical_id log_file pid
+      logical_id=$(mapping_value "$physical_id")
+      log_file="$state_dir/vllm-$name.log"
+      setsid taskset -c "$cpu_set" env \
+        ASCEND_VISIBLE_DEVICES="$logical_id" \
+        ASCEND_RT_VISIBLE_DEVICES="$logical_id" \
+        ASCEND_DEVICE_ID="$logical_id" \
+        HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= http_proxy= https_proxy= all_proxy= \
+        mineru-vllm-server --host {{ .Values.mineru.runtime.listenHost | quote }} --port "$port" \
+          --gpu-memory-utilization {{ .Values.mineru.runtime.gpuMemoryUtilization }} \
+          --max-num-seqs {{ .Values.mineru.runtime.maxNumSeqs }} \
+          --max-num-batched-tokens {{ .Values.mineru.runtime.maxNumBatchedTokens }} \
+          >"$log_file" 2>&1 &
+      pid=$!
+      echo "$pid" >"$state_dir/vllm-$name.pid"
+      wait_healthy "$port" "$pid" || { tail -200 "$log_file"; return 1; }
+      echo "MinerU $name physical=$physical_id logical=$logical_id port=$port pid=$pid"
+    }
+{{- range .Values.mineru.servers }}
+    start_service {{ .id | quote }} {{ .physicalDevice | quote }} {{ .port }} {{ .cpuSet | quote }}
+{{- end }}
+    if [[ -n "${KUBERAY_GEN_RAY_START_CMD:-}" ]]; then
+      eval "exec ${KUBERAY_GEN_RAY_START_CMD}"
+    fi
+    exec ray start --address="${RAY_ADDRESS}" --block --num-cpus={{ .Values.mineru.resources.requests.cpu | quote }} \
+      --resources='{{ .Values.mineru.rayResources | toJson }}'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k12-clean-qa.qwenName" . }}-launcher
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qwen
+data:
+  start_qwen.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source /usr/local/Ascend/driver/bin/setenv.bash 2>/dev/null || true
+    source /usr/local/Ascend/ascend-toolkit/set_env.sh 2>/dev/null || true
+    export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+    export HCCL_OP_EXPANSION_MODE=AIV
+    export HCCL_BUFFSIZE=1024
+    export OMP_NUM_THREADS=1
+    export TASK_QUEUE_ENABLE=1
+    IFS=';' read -r -a endpoint_specs <<< "${QWEN_ENDPOINT_SPECS:?QWEN_ENDPOINT_SPECS is required}"
+    pids=()
+    stop_all() {
+      if ((${#pids[@]})); then
+        kill "${pids[@]}" 2>/dev/null || true
+        wait "${pids[@]}" 2>/dev/null || true
+      fi
+    }
+    trap stop_all EXIT INT TERM
+    launch_service() {
+      local spec=$1 devices port cpu_set id
+      IFS='|' read -r id devices port cpu_set <<< "$spec"
+      (
+        export ASCEND_VISIBLE_DEVICES="$devices"
+        export ASCEND_RT_VISIBLE_DEVICES="$devices"
+        export VLLM_CACHE_ROOT="/tmp/vllm-cache-$port"
+        export XDG_CACHE_HOME="/tmp/xdg-cache-$port"
+        exec taskset -c "$cpu_set" vllm serve {{ .Values.qwen.modelPath | quote }} \
+          --host 0.0.0.0 --port "$port" \
+          --served-model-name {{ .Values.qwen.modelName | quote }} \
+          --data-parallel-size {{ .Values.qwen.dataParallelSize }} \
+          --tensor-parallel-size {{ .Values.qwen.tensorParallelSize }} \
+{{- if .Values.qwen.runtime.enableExpertParallel }}
+          --enable-expert-parallel \
+{{- end }}
+          --quantization ascend --dtype bfloat16 \
+          --max-model-len {{ .Values.qwen.runtime.maxModelLen }} \
+          --max-num-seqs {{ .Values.qwen.runtime.maxNumSeqs }} \
+          --max-num-batched-tokens {{ .Values.qwen.runtime.maxNumBatchedTokens }} \
+          --gpu-memory-utilization {{ .Values.qwen.runtime.gpuMemoryUtilization }} \
+          --trust-remote-code \
+{{- if not .Values.qwen.runtime.enablePrefixCaching }}
+          --no-enable-prefix-caching \
+{{- end }}
+          --compilation-config {{ .Values.qwen.runtime.compilationConfig | quote }} \
+          --additional-config {{ .Values.qwen.runtime.additionalConfig | quote }}
+      ) >"/tmp/qwen-vllm-$port.log" 2>&1 &
+      pids+=("$!")
+      echo "Started Qwen id=$id port=$port devices=$devices pid=${pids[-1]}"
+    }
+    for spec in "${endpoint_specs[@]}"; do launch_service "$spec"; done
+    set +e
+    wait -n "${pids[@]}"
+    status=$?
+    set -e
+    echo "A Qwen endpoint exited with status $status" >&2
+    exit "$status"

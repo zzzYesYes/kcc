@@ -1,0 +1,22 @@
+ops:
+  resolve_e2e_books:
+    config:
+      input_bucket: k12-textbook-raw
+      input_prefix: source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/
+      input_object_key: source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z/content_id=12ef79ba-6a49-47e6-987f-5b0df8c1130b/pdf/义务教育教科书·科学·学生活动手册三年级下册.pdf
+      count: 1
+      mineru_bucket: k12-mineru-output
+      output_bucket: k12-cleaned-corpus
+      output_root: e2e-demo
+      resume: true
+      mineru_batch_size: 1
+      inference_slots: 4
+      queue_size: 6
+      block_inflight: 8
+      generation_max_inflight: 8
+      judge_max_inflight: 4
+      http_pool_size: 16
+      microbatch_size: 2
+      max_blocks_per_document: 0
+      judge_batch_size: 8
+      qwen_model: qwen3.6-35b-a3b

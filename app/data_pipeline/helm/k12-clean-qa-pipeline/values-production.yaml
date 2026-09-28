@@ -1,0 +1,60 @@
+# Eight-NPU profile: four independent TP1 endpoint groups. This intentionally
+# does not reproduce the historical static TP2 launcher.
+qwen:
+  npuCount: 8
+  physicalDevices: [8, 9, 10, 11, 12, 13, 14, 15]
+  rayWorkerGroupsEnabled: false
+  dataParallelSize: 2
+  tensorParallelSize: 1
+  endpoints:
+    - {id: qwen-0, devices: "8,9", port: 8000, cpuSet: "0-47"}
+    - {id: qwen-1, devices: "10,11", port: 8001, cpuSet: "48-95"}
+    - {id: qwen-2, devices: "12,13", port: 8002, cpuSet: "96-143"}
+    - {id: qwen-3, devices: "14,15", port: 8003, cpuSet: "144-191"}
+  rayWorkerGroups:
+    - name: qa-8-9
+      physicalDevices: [8, 9]
+      endpoints:
+        - {id: qwen-8, devices: "8", port: 8000, cpuSet: "0-27"}
+        - {id: qwen-9, devices: "9", port: 8001, cpuSet: "28-55"}
+    - name: qa-10-11
+      physicalDevices: [10, 11]
+      endpoints:
+        - {id: qwen-10, devices: "10", port: 8000, cpuSet: "0-27"}
+        - {id: qwen-11, devices: "11", port: 8001, cpuSet: "28-55"}
+    - name: qa-12-13
+      physicalDevices: [12, 13]
+      endpoints:
+        - {id: qwen-12, devices: "12", port: 8000, cpuSet: "0-27"}
+        - {id: qwen-13, devices: "13", port: 8001, cpuSet: "28-55"}
+    - name: qa-14-15
+      physicalDevices: [14, 15]
+      endpoints:
+        - {id: qwen-14, devices: "14", port: 8000, cpuSet: "0-27"}
+        - {id: qwen-15, devices: "15", port: 8001, cpuSet: "28-55"}
+  resources:
+    vllm:
+      requests: {cpu: "192", memory: 768Gi}
+      limits: {cpu: "192", memory: 768Gi}
+    rayBridge:
+      requests: {cpu: "64", memory: 128Gi}
+      limits: {cpu: "64", memory: 128Gi}
+
+stage1:
+  count: 0
+  maxDocumentInflight: 12
+  selectionManifestKey: ""
+  automatedValidation: false
+  outputPrefix: stage1/full/stage1-v1.0.2
+
+stage2:
+  count: 0
+  automatedValidation: false
+  documentInflight: 8
+  blockInflight: 4
+  generationMaxInflight: 8
+  judgeMaxInflight: 8
+  httpPoolSize: 16
+  microbatchSize: 2
+  judgeBatchSize: 8
+  outputPrefix: stage2/full/stage2-v1.1.0-8npu

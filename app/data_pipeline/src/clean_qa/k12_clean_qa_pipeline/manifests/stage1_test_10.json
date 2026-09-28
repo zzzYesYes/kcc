@@ -1,0 +1,49 @@
+{
+  "manifest_version": "1.0",
+  "source_bucket": "k12-mineru-output",
+  "source_prefix": "full-output/mineru34-hybrid-a3-full-20260722T104600Z",
+  "selection_policy": "fixed representative math textbooks selected from successful MinerU 3.4 Hybrid outputs",
+  "documents": [
+    {
+      "document_id": "pdf-8e99cca84a22a2a45575",
+      "category": "image_dense_elementary"
+    },
+    {
+      "document_id": "pdf-3f4b908d0b6a2b8ffc31",
+      "category": "formula_dense_high_school"
+    },
+    {
+      "document_id": "pdf-47a06b38e95544cf6e59",
+      "category": "complex_geometry"
+    },
+    {
+      "document_id": "pdf-cbf051211167bf331eb6",
+      "category": "tables_and_statistics"
+    },
+    {
+      "document_id": "pdf-9cd9a2e91ed2c8e7c3bf",
+      "category": "ocr_anomaly_low_vision"
+    },
+    {
+      "document_id": "pdf-0f86dc9170e2de5b09a8",
+      "category": "text_dense_advanced_math"
+    },
+    {
+      "document_id": "pdf-0007de8572f8fa6b2f70",
+      "category": "accessible_deaf_school"
+    },
+    {
+      "document_id": "pdf-574715b69a999353c1e6",
+      "category": "elementary_exercises"
+    },
+    {
+      "document_id": "pdf-3880d0920802ce222b89",
+      "category": "algebra_geometry_mixed"
+    },
+    {
+      "document_id": "pdf-55c0a9403857ee1abe48",
+      "category": "life_mathematics"
+    }
+  ]
+}
+

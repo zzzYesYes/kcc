@@ -1,0 +1,11 @@
+apiVersion: v2
+name: data-lake
+description: MinIO-backed K12 textbook data lake infrastructure
+type: application
+version: 0.2.0
+appVersion: "2026.08"
+home: https://github.com/zzzYesYes/kcc/tree/dev/app/data_pipeline
+keywords:
+  - k12
+  - minio
+  - data-lake

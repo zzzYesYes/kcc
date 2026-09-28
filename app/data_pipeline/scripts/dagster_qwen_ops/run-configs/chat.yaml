@@ -1,0 +1,11 @@
+ops:
+  call_qwen_chat:
+    config:
+      target: standard
+      prompt: 请用一句中文说明 Dagster 如何管理推理服务生命周期。
+      system_prompt: You are a precise and helpful assistant.
+      history_json: "[]"
+      temperature: 0.0
+      max_tokens: 256
+      enable_thinking: false
+      timeout_seconds: 300

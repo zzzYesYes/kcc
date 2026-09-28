@@ -1,0 +1,24 @@
+ops:
+  validate_run_config:
+    config:
+      batch_id: dagster-ui-dynamic-smoke-001
+      mode: count
+      count: 1
+      input_bucket: k12-textbook-raw
+      input_prefix: source=tchMaterial-parser/batch_id=k12_pdf_full_20260713T062427Z
+      output_bucket: k12-mineru-output
+      output_prefix: production/mineru/dagster-ui-dynamic-smoke-001
+      mineru_service_count: 1
+      inference_slots: 4
+      document_inflight_per_service: 5
+      window_prefetch: 1
+      download_workers: 2
+      upload_workers: 4
+      block_prepare_workers: 12
+      render_workers: 6
+      finalize_workers: 3
+      archive_workers: 2
+      multipart_chunksize_mib: 16
+      multipart_max_concurrency: 4
+      sample_size: 1
+      document_ui_detail_limit: 30

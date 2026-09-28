@@ -1,0 +1,102 @@
+{{- if and .Values.qwen.enabled .Values.qwen.standaloneEnabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k12-clean-qa.qwenName" . }}
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  annotations:
+    huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" .Values.qwen.physicalDevices | quote }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qwen-worker
+spec:
+  replicas: {{ .Values.qwen.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "k12-clean-qa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: qwen-worker
+  template:
+    metadata:
+      annotations:
+        huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" .Values.qwen.physicalDevices | quote }}
+        predicate-time: "1"
+      labels:
+        {{- include "k12-clean-qa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: qwen-worker
+        k12.ai/workload: {{ include "k12-clean-qa.qwenName" . }}
+    spec:
+      serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+      {{- include "k12-clean-qa.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: vllm-ascend
+          image: "{{ .Values.qwen.image.repository }}:{{ .Values.qwen.image.tag }}"
+          imagePullPolicy: {{ .Values.qwen.image.pullPolicy }}
+          command: ["/bin/bash", "-lc", "--"]
+          args: ["exec /opt/k12-launcher/start_qwen.sh"]
+          env:
+            - name: QWEN_ENDPOINT_SPECS
+              value: {{ include "k12-clean-qa.endpointSpecs" .Values.qwen.endpoints | quote }}
+            {{- include "k12-clean-qa.proxyEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.qwen.resources.vllm.requests.cpu | quote }}
+              memory: {{ .Values.qwen.resources.vllm.requests.memory }}
+              {{ .Values.ascend.resourceName }}: {{ .Values.qwen.npuCount | quote }}
+            limits:
+              cpu: {{ .Values.qwen.resources.vllm.limits.cpu | quote }}
+              memory: {{ .Values.qwen.resources.vllm.limits.memory }}
+              {{ .Values.ascend.resourceName }}: {{ .Values.qwen.npuCount | quote }}
+          securityContext:
+            {{- toYaml .Values.ascend.securityContext | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["/bin/bash", "-lc", "{{ range $index, $endpoint := .Values.qwen.endpoints }}{{ if $index }} && {{ end }}curl --noproxy '*' -fsS http://127.0.0.1:{{ $endpoint.port }}/health{{ end }}"]
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          volumeMounts:
+            - name: model-weights
+              mountPath: {{ .Values.models.qwen.mountPath }}
+              {{- with .Values.models.qwen.subPath }}
+              subPath: {{ . }}
+              {{- end }}
+              readOnly: true
+            - {name: shared-memory, mountPath: /dev/shm}
+            - {name: qwen-launcher, mountPath: /opt/k12-launcher, readOnly: true}
+            {{- include "k12-clean-qa.ascendVolumeMounts" . | nindent 12 }}
+        - name: ray-bridge
+          image: "{{ .Values.ray.head.image.repository }}:{{ .Values.ray.head.image.tag }}"
+          imagePullPolicy: {{ .Values.ray.head.image.pullPolicy }}
+          command: ["/bin/bash", "-lc", "--"]
+          args:
+            - >-
+              {{ range .Values.qwen.endpoints }}until curl --noproxy '*' -fsS http://127.0.0.1:{{ .port }}/health; do sleep 5; done;
+              {{ end }}exec ray start --address={{ include "k12-clean-qa.rayHeadService" . }}.{{ include "k12-clean-qa.namespace" . }}.svc.cluster.local:6379 --block --num-cpus={{ .Values.qwen.resources.rayBridge.requests.cpu }} --resources='{"QWEN36_A3B_API":{{ len .Values.qwen.endpoints }},"qa_vllm_npu":{{ len .Values.qwen.endpoints }}}'
+          env:
+            {{- include "k12-clean-qa.s3Env" . | nindent 12 }}
+            {{- include "k12-clean-qa.proxyEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.qwen.resources.rayBridge | nindent 12 }}
+          volumeMounts:
+            - {name: ray-logs, mountPath: /tmp/ray}
+            - {name: shared-memory, mountPath: /dev/shm}
+      volumes:
+        - name: ray-logs
+          emptyDir: {}
+        - name: shared-memory
+          emptyDir: {medium: Memory, sizeLimit: {{ .Values.qwen.sharedMemorySize }}}
+        - name: model-weights
+          {{- include "k12-clean-qa.qwenModelVolume" . | nindent 10 }}
+        - name: qwen-launcher
+          configMap:
+            name: {{ include "k12-clean-qa.qwenName" . }}-launcher
+            defaultMode: 0555
+        {{- include "k12-clean-qa.ascendVolumes" . | nindent 8 }}
+      nodeSelector:
+        {{- toYaml (mergeOverwrite (deepCopy .Values.ascend.nodeSelector) .Values.qwen.nodeSelector) | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.qwen.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml (concat .Values.ascend.tolerations .Values.qwen.tolerations) | nindent 8 }}
+{{- end }}

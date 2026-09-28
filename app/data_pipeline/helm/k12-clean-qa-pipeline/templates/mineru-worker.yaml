@@ -1,0 +1,82 @@
+{{- if and .Values.mineru.enabled .Values.mineru.standaloneEnabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k12-clean-qa.mineruName" . }}
+  namespace: {{ include "k12-clean-qa.namespace" . }}
+  annotations:
+    huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" .Values.mineru.physicalDevices | quote }}
+  labels:
+    {{- include "k12-clean-qa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mineru-worker
+spec:
+  replicas: {{ .Values.mineru.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "k12-clean-qa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mineru-worker
+  template:
+    metadata:
+      annotations:
+        huawei.com/Ascend910: {{ include "k12-clean-qa.ascendDeviceAnnotation" .Values.mineru.physicalDevices | quote }}
+        predicate-time: "1"
+      labels:
+        {{- include "k12-clean-qa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mineru-worker
+        k12.ai/workload: {{ include "k12-clean-qa.mineruName" . }}
+    spec:
+      serviceAccountName: {{ include "k12-clean-qa.serviceAccountName" . }}
+      {{- include "k12-clean-qa.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: ray-worker
+          image: "{{ .Values.mineru.image.repository }}:{{ .Values.mineru.image.tag }}"
+          imagePullPolicy: {{ .Values.mineru.image.pullPolicy }}
+          command: ["/bin/bash", "-lc", "--"]
+          args: ["exec /opt/k12-launcher/start_mineru.sh"]
+          env:
+            - name: MINERU_PHYSICAL_DEVICES
+              value: {{ join "," .Values.mineru.physicalDevices | quote }}
+            - name: RAY_ADDRESS
+              value: "{{ include "k12-clean-qa.rayHeadService" . }}.{{ include "k12-clean-qa.namespace" . }}.svc.cluster.local:6379"
+            {{- include "k12-clean-qa.s3Env" . | nindent 12 }}
+            {{- include "k12-clean-qa.proxyEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ .Values.mineru.resources.requests.cpu | quote }}
+              memory: {{ .Values.mineru.resources.requests.memory }}
+              {{ .Values.ascend.resourceName }}: {{ .Values.mineru.npuCount | quote }}
+            limits:
+              cpu: {{ .Values.mineru.resources.limits.cpu | quote }}
+              memory: {{ .Values.mineru.resources.limits.memory }}
+              {{ .Values.ascend.resourceName }}: {{ .Values.mineru.npuCount | quote }}
+          securityContext:
+            {{- toYaml .Values.ascend.securityContext | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["/bin/bash", "-lc", "{{ range $index, $server := .Values.mineru.servers }}{{ if $index }} && {{ end }}curl --noproxy '*' -fsS http://127.0.0.1:{{ $server.port }}/health{{ end }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - {name: ray-logs, mountPath: /tmp/ray}
+            - {name: shared-memory, mountPath: /dev/shm}
+            - {name: mineru-launcher, mountPath: /opt/k12-launcher, readOnly: true}
+            {{- include "k12-clean-qa.ascendVolumeMounts" . | nindent 12 }}
+      volumes:
+        - name: ray-logs
+          emptyDir: {}
+        - name: shared-memory
+          emptyDir: {medium: Memory, sizeLimit: {{ .Values.mineru.sharedMemorySize }}}
+        - name: mineru-launcher
+          configMap:
+            name: {{ include "k12-clean-qa.mineruName" . }}-launcher
+            defaultMode: 0555
+        {{- include "k12-clean-qa.ascendVolumes" . | nindent 8 }}
+      nodeSelector:
+        {{- toYaml (mergeOverwrite (deepCopy .Values.ascend.nodeSelector) .Values.mineru.nodeSelector) | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.mineru.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml (concat .Values.ascend.tolerations .Values.mineru.tolerations) | nindent 8 }}
+{{- end }}

@@ -1,0 +1,305 @@
+global:
+  namespaceOverride: ""
+  imagePullSecrets: []
+  labels: {}
+
+externalS3:
+  endpoint: http://minio.example.internal:9000
+  region: us-east-1
+  pathStyle: true
+  credentialsSecret:
+    name: k12-pipeline-s3
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+  buckets:
+    raw: k12-textbook-raw
+    mineru: k12-mineru-output
+    cleaned: k12-cleaned-corpus
+  prefixes:
+    raw: source=tchMaterial-parser
+    mineru: full-output/mineru34-hybrid-a3-full-20260722T104600Z
+    stage1: stage1/full/stage1-v1.0.2
+    stage2: stage2/full/stage2-v1.1.0-8npu
+    cleanCollection: stage1/clean-md-collection-v1
+    trainingCollection: stage2/training-jsonl-collection-v1
+
+proxy:
+  httpProxy: ""
+  httpsProxy: ""
+  noProxy: >-
+    127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+dagster:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: data-pipeline
+    tag: dev
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 3000
+    nodePort: 30080
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "8"
+      memory: 32Gi
+  nodeSelector:
+    kubernetes.io/arch: amd64
+  affinity: {}
+  tolerations: []
+  workingDir: /opt/data-pipeline/src
+  dagsterHome: /opt/dagster/dagster_home
+  storage:
+    type: emptyDir
+    existingClaim: ""
+    hostPath: ""
+    sizeLimit: ""
+  extraEnv: []
+
+ray:
+  enabled: true
+  version: "2.48.0"
+  clusterName: k12-clean-qa
+  enableInTreeAutoscaling: true
+  idleTimeoutSeconds: 60
+  head:
+    image:
+      repository: 110.120.0.3:8889/mineru/ray-data
+      tag: py3.11.13-ray2.48.0-daft0.7.19-dagster1.13.13-s3-compress-20260716
+      pullPolicy: IfNotPresent
+    rayStartParams:
+      num-cpus: "0"
+      dashboard-host: 0.0.0.0
+    resources:
+      requests:
+        cpu: "2"
+        memory: 8Gi
+      limits:
+        cpu: "8"
+        memory: 32Gi
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    affinity: {}
+    tolerations: []
+    service:
+      dashboardPort: 8265
+      clientPort: 10001
+  cpuWorker:
+    enabled: true
+    groupName: cpu-data-worker
+    replicas: 1
+    minReplicas: 1
+    maxReplicas: 1
+    rayStartParams:
+      num-cpus: "16"
+      resources: '{"CPU_DATA": 1}'
+    resources:
+      requests:
+        cpu: "16"
+        memory: 64Gi
+      limits:
+        cpu: "18"
+        memory: 72Gi
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    affinity: {}
+    tolerations: []
+
+ascend:
+  resourceName: huawei.com/Ascend910
+  nodeSelector:
+    kubernetes.io/arch: arm64
+    kubernetes.io/hostname: a3-server-00
+  tolerations: []
+  securityContext:
+    privileged: true
+  hostMounts:
+    enabled: true
+    driverPath: /usr/local/Ascend/driver
+    dcmiPath: /usr/local/dcmi
+    npuSmiPath: /usr/local/bin/npu-smi
+
+models:
+  qwen:
+    volumeType: hostPath
+    hostPath: /home/admin/models/Qwen3.6-35B-A3B-w8a8
+    existingClaim: ""
+    subPath: ""
+    mountPath: /models/Qwen3.6-35B-A3B-w8a8
+
+mineru:
+  enabled: true
+  standaloneEnabled: true
+  rayWorkerGroupEnabled: true
+  replicas: 0
+  minReplicas: 0
+  maxReplicas: 1
+  groupName: mineru-npu-worker
+  image:
+    repository: 110.120.0.3:8889/mineru/mineru-vllm-a3
+    tag: official-v0.11.0-20260715-ray248-lake-20260716
+    pullPolicy: IfNotPresent
+  physicalDevices: [14, 15]
+  npuCount: 2
+  rayResources:
+    NPU: 2
+    MINERU_NPU: 2
+    mineru_npu: 2
+  resources:
+    requests:
+      cpu: "64"
+      memory: 256Gi
+    limits:
+      cpu: "64"
+      memory: 256Gi
+  sharedMemorySize: 128Gi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  service:
+    enabled: true
+    type: ClusterIP
+  servers:
+    - id: a
+      physicalDevice: 14
+      port: 30001
+      cpuSet: 0-31
+    - id: b
+      physicalDevice: 15
+      port: 30002
+      cpuSet: 32-63
+  runtime:
+    listenHost: 0.0.0.0
+    inferenceSlots: 4
+    documentInflight: 5
+    windowPrefetch: 1
+    maxNumSeqs: 288
+    maxNumBatchedTokens: 2560
+    gpuMemoryUtilization: 0.50
+    backend: hybrid-http-client
+    effort: high
+    imageAnalysis: true
+
+qwen:
+  enabled: true
+  standaloneEnabled: true
+  rayWorkerGroupsEnabled: true
+  replicas: 0
+  minReplicas: 0
+  maxReplicas: 1
+  image:
+    repository: 110.120.0.3:8889/mineru/vllm-ascend-worker
+    tag: v0.21.0rc1-a3-20260713-s3
+    pullPolicy: IfNotPresent
+  modelPath: /models/Qwen3.6-35B-A3B-w8a8
+  modelName: qwen3.6-35b-a3b
+  npuCount: 2
+  physicalDevices: [14, 15]
+  tensorParallelSize: 1
+  dataParallelSize: 1
+  endpoints:
+    - id: qwen-a
+      devices: "14"
+      port: 8000
+      cpuSet: 0-27
+    - id: qwen-b
+      devices: "15"
+      port: 8001
+      cpuSet: 28-55
+  rayWorkerGroups:
+    - name: qa-14-15
+      physicalDevices: [14, 15]
+      endpoints:
+        - id: qwen-a
+          devices: "14"
+          port: 8000
+          cpuSet: 0-27
+        - id: qwen-b
+          devices: "15"
+          port: 8001
+          cpuSet: 28-55
+  resources:
+    vllm:
+      requests:
+        cpu: "56"
+        memory: 224Gi
+      limits:
+        cpu: "56"
+        memory: 224Gi
+    rayBridge:
+      requests:
+        cpu: "8"
+        memory: 32Gi
+      limits:
+        cpu: "8"
+        memory: 32Gi
+  sharedMemorySize: 64Gi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  service:
+    enabled: true
+    type: ClusterIP
+  runtime:
+    maxModelLen: 32768
+    maxNumSeqs: 8
+    maxNumBatchedTokens: 4096
+    gpuMemoryUtilization: 0.85
+    enableExpertParallel: true
+    enablePrefixCaching: false
+    compilationConfig: '{"cudagraph_mode":"FULL_DECODE_ONLY"}'
+    additionalConfig: '{"enable_cpu_binding":true,"ascend_compilation_config":{"fuse_norm_quant":false}}'
+
+stage1:
+  version: stage1-v1.0.2
+  count: 10
+  resume: true
+  cpuWorkers: 16
+  maxDocumentInflight: 8
+  selectionManifestKey: manifests/stage1_test_10.json
+  automatedValidation: true
+  dryRun: false
+  outputPrefix: stage1/smoke/stage1-v1.0.2
+
+stage2:
+  version: stage2-v1.1.0
+  promptVersion: k12-qa-zh-v1.2
+  count: 10
+  resume: true
+  outputPrefix: stage2/smoke/stage2-v1.1.0-k12-qa-zh-v1.2
+  documentInflight: 3
+  blockInflight: 8
+  generationMaxInflight: 8
+  judgeMaxInflight: 4
+  httpPoolSize: 16
+  microbatchSize: 2
+  judgeBatchSize: 8
+  mergeMaxBlocks: 8
+  mergeMaxChars: 3200
+  chapterMaxUnits: 12
+  documentMaxUnits: 48
+  requireJudgeForVerified: true
+  maxBlocksPerDocument: 0
+  benchmark: false
+  automatedValidation: true
+  dryRun: false
+
+collectors:
+  cleanMarkdown:
+    outputPrefix: stage1/clean-md-collection-v1
+  trainingJsonl:
+    outputPrefix: stage2/training-jsonl-collection-v1
+    requireVerified: true
+    requireJudgeAccept: true

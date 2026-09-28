@@ -1,0 +1,50 @@
+# Two-device smoke profile. NPU workloads remain scaled to zero until requested.
+mineru:
+  physicalDevices: [14, 15]
+  servers:
+    - id: a
+      physicalDevice: 14
+      port: 30001
+      cpuSet: 0-31
+    - id: b
+      physicalDevice: 15
+      port: 30002
+      cpuSet: 32-63
+
+qwen:
+  npuCount: 2
+  physicalDevices: [14, 15]
+  tensorParallelSize: 1
+  endpoints:
+    - id: qwen-a
+      devices: "14"
+      port: 8000
+      cpuSet: 0-27
+    - id: qwen-b
+      devices: "15"
+      port: 8001
+      cpuSet: 28-55
+  rayWorkerGroups:
+    - name: qa-14-15
+      physicalDevices: [14, 15]
+      endpoints:
+        - id: qwen-a
+          devices: "14"
+          port: 8000
+          cpuSet: 0-27
+        - id: qwen-b
+          devices: "15"
+          port: 8001
+          cpuSet: 28-55
+
+stage1:
+  count: 10
+  outputPrefix: stage1/smoke/stage1-v1.0.2
+
+stage2:
+  count: 10
+  documentInflight: 3
+  blockInflight: 8
+  generationMaxInflight: 8
+  judgeMaxInflight: 4
+  outputPrefix: stage2/smoke/stage2-v1.1.0-k12-qa-zh-v1.2

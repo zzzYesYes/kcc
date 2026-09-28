@@ -1,0 +1,8 @@
+ops:
+  load_submission_state:
+    config:
+      batch_id: dagster-smoke-001
+      output_bucket: k12-mineru-output
+  validate_existing_outputs:
+    config:
+      sample_size: 5

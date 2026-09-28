@@ -1,0 +1,2 @@
+STAGE2_VERSION = "stage2-v1.1.0"
+PROMPT_VERSION = "k12-qa-zh-v1.2"

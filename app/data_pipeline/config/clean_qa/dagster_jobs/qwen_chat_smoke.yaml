@@ -1,0 +1,10 @@
+ops:
+  submit_qwen_chat:
+    config:
+      prompt: "只回答数字：2+2=?"
+      system_prompt: "You are a precise document analysis assistant."
+      history_json: "[]"
+      temperature: 0.0
+      max_tokens: 32
+      enable_thinking: false
+      timeout_seconds: 600

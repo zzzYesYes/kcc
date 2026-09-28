@@ -1,0 +1,15 @@
+ops:
+  resolve_source_manifest:
+    config:
+      source_bucket: k12-mineru-output
+      source_prefix: full-output/mineru34-hybrid-a3-full-20260722T104600Z
+      output_bucket: k12-cleaned-corpus
+      output_prefix: stage1/test-10/stage1-v1.0.2-20260724
+      selection_manifest_key: manifests/stage1_test_10.json
+      count: 10
+      resume: true
+      cpu_workers: 16
+      max_document_inflight: 8
+      stage1_version: stage1-v1.0.2
+      automated_validation: true
+      dry_run: false

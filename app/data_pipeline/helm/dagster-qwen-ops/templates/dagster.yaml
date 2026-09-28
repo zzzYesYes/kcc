@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dagster-qwen-ops.fullname" . }}-dagster
+  namespace: {{ include "dagster-qwen-ops.namespace" . }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dagster
+spec:
+  replicas: {{ .Values.dagster.replicas }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "dagster-qwen-ops.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dagster
+  template:
+    metadata:
+      labels:
+        {{- include "dagster-qwen-ops.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dagster
+    spec:
+      serviceAccountName: {{ include "dagster-qwen-ops.serviceAccountName" . }}
+      {{- include "dagster-qwen-ops.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: webserver
+          image: {{ printf "%s:%s" .Values.dagster.image.repository .Values.dagster.image.tag | quote }}
+          imagePullPolicy: {{ .Values.dagster.image.pullPolicy }}
+          command: ["dagster-webserver"]
+          args: ["-h", "0.0.0.0", "-p", {{ .Values.dagster.service.port | quote }}, "-m", "dagster_qwen_ops.definitions"]
+          ports: [{name: http, containerPort: {{ .Values.dagster.service.port }}}]
+          env: &dagsterEnv
+            - {name: DAGSTER_HOME, value: {{ .Values.dagster.dagsterHome | quote }}}
+            {{- include "dagster-qwen-ops.proxyEnv" . | nindent 12 }}
+            {{- $standard := .Values.workers.standard }}
+            {{- $standardName := include "dagster-qwen-ops.workerName" (dict "root" . "worker" $standard "key" "standard") }}
+            - {name: QWEN_NAMESPACE, value: {{ include "dagster-qwen-ops.namespace" . | quote }}}
+            - {name: QWEN_DEPLOYMENT_NAME, value: {{ $standardName | quote }}}
+            - {name: QWEN_SERVICE_NAME, value: {{ $standardName | quote }}}
+            - {name: QWEN_POD_LABEL_KEY, value: app.kubernetes.io/component}
+            - {name: QWEN_POD_LABEL_VALUE, value: qwen-worker-standard}
+            - {name: QWEN_SERVICE_PORT, value: {{ (index $standard.endpoints 0).port | quote }}}
+            - {name: QWEN_MODEL_NAME, value: {{ $standard.modelName | quote }}}
+            - {name: QWEN_API_BASE_URL, value: {{ $standard.runtime.apiBaseUrl | quote }}}
+            - {name: QWEN_HEALTH_PATH, value: {{ $standard.runtime.healthPath | quote }}}
+            - {name: QWEN_MODELS_PATH, value: {{ $standard.runtime.modelsPath | quote }}}
+            - {name: QWEN_CHAT_PATH, value: {{ $standard.runtime.chatPath | quote }}}
+            - {name: QWEN_REQUEST_TIMEOUT_SECONDS, value: {{ $standard.runtime.chatTimeoutSeconds | quote }}}
+            - {name: QWEN_STARTUP_TIMEOUT_SECONDS, value: {{ $standard.runtime.startupTimeoutSeconds | quote }}}
+            - {name: QWEN_SHUTDOWN_TIMEOUT_SECONDS, value: {{ $standard.runtime.shutdownTimeoutSeconds | quote }}}
+            - {name: QWEN_POLL_INTERVAL_SECONDS, value: {{ $standard.runtime.pollIntervalSeconds | quote }}}
+            - {name: QWEN_CHAT_TIMEOUT_SECONDS, value: {{ $standard.runtime.chatTimeoutSeconds | quote }}}
+            {{- $eight := .Values.workers.eightNpu }}
+            {{- $eightName := include "dagster-qwen-ops.workerName" (dict "root" . "worker" $eight "key" "eightNpu") }}
+            - {name: QWEN8_NAMESPACE, value: {{ include "dagster-qwen-ops.namespace" . | quote }}}
+            - {name: QWEN8_DEPLOYMENT_NAME, value: {{ $eightName | quote }}}
+            - {name: QWEN8_SERVICE_NAME, value: {{ $eightName | quote }}}
+            - {name: QWEN8_POD_LABEL_KEY, value: app.kubernetes.io/component}
+            - {name: QWEN8_POD_LABEL_VALUE, value: qwen-worker-eightNpu}
+            - {name: QWEN8_SERVICE_PORT, value: {{ (index $eight.endpoints 0).port | quote }}}
+            - {name: QWEN8_MODEL_NAME, value: {{ $eight.modelName | quote }}}
+            - {name: QWEN8_API_BASE_URL, value: {{ $eight.runtime.apiBaseUrl | quote }}}
+            - {name: QWEN8_HEALTH_PATH, value: {{ $eight.runtime.healthPath | quote }}}
+            - {name: QWEN8_MODELS_PATH, value: {{ $eight.runtime.modelsPath | quote }}}
+            - {name: QWEN8_CHAT_PATH, value: {{ $eight.runtime.chatPath | quote }}}
+            - {name: QWEN8_REQUEST_TIMEOUT_SECONDS, value: {{ $eight.runtime.chatTimeoutSeconds | quote }}}
+            - {name: QWEN8_STARTUP_TIMEOUT_SECONDS, value: {{ $eight.runtime.startupTimeoutSeconds | quote }}}
+            - {name: QWEN8_SHUTDOWN_TIMEOUT_SECONDS, value: {{ $eight.runtime.shutdownTimeoutSeconds | quote }}}
+            - {name: QWEN8_POLL_INTERVAL_SECONDS, value: {{ $eight.runtime.pollIntervalSeconds | quote }}}
+            {{- if .Values.apiAuth.existingSecret }}
+            - name: QWEN_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.apiAuth.existingSecret | quote }}, key: {{ .Values.apiAuth.key | quote }}}}
+            - name: QWEN8_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.apiAuth.existingSecret | quote }}, key: {{ .Values.apiAuth.key | quote }}}}
+            {{- end }}
+            {{- with .Values.dagster.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts: &dagsterMounts
+            - {name: dagster-home, mountPath: {{ .Values.dagster.dagsterHome | quote }}}
+            - name: dagster-config
+              mountPath: {{ printf "%s/dagster.yaml" .Values.dagster.dagsterHome | quote }}
+              subPath: dagster.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet: {path: /server_info, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.dagster.resources | nindent 12 }}
+        - name: daemon
+          image: {{ printf "%s:%s" .Values.dagster.image.repository .Values.dagster.image.tag | quote }}
+          imagePullPolicy: {{ .Values.dagster.image.pullPolicy }}
+          command: ["dagster-daemon", "run", "-m", "dagster_qwen_ops.definitions"]
+          env: *dagsterEnv
+          volumeMounts: *dagsterMounts
+          resources:
+            {{- toYaml .Values.dagster.resources | nindent 12 }}
+      volumes:
+        - name: dagster-config
+          configMap: {name: {{ include "dagster-qwen-ops.fullname" . }}-dagster}
+        - name: dagster-home
+          {{- if eq .Values.dagster.storage.type "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ required "dagster.storage.existingClaim is required for pvc" .Values.dagster.storage.existingClaim | quote }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.dagster.storage.sizeLimit }}
+          {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.dagster.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.dagster.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.dagster.affinity | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dagster-qwen-ops.fullname" . }}-dagster
+  namespace: {{ include "dagster-qwen-ops.namespace" . }}
+  labels:
+    {{- include "dagster-qwen-ops.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.dagster.service.type }}
+  selector:
+    {{- include "dagster-qwen-ops.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dagster
+  ports:
+    - name: http
+      port: {{ .Values.dagster.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.dagster.service.type "NodePort") .Values.dagster.service.nodePort }}
+      nodePort: {{ .Values.dagster.service.nodePort }}
+      {{- end }}
