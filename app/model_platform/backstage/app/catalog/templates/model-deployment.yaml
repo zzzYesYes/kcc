@@ -1,0 +1,166 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: request-model-deployment
+  namespace: default
+  title: Model deployment request (GitOps)
+  description: Fill an allow-listed deployment request and open a reviewed Gitea PR. The request starts Stopped; Tekton validates it and an operator performs the Argo CD sync.
+  links:
+    - title: Open request form
+      url: /create/templates/default/request-model-deployment
+  tags:
+    - model-platform
+    - gitops
+    - control-plane-only
+spec:
+  owner: group:default/platform-team
+  type: service
+  parameters:
+    - title: Deployment identity
+      required:
+        - deploymentName
+        - projectRef
+      properties:
+        deploymentName:
+          title: Deployment name
+          type: string
+          description: New DNS-label name; an existing request cannot be overwritten.
+          pattern: '^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$'
+          maxLength: 40
+        projectRef:
+          title: Project
+          type: string
+          default: model-serving
+          enum:
+            - model-serving
+    - title: Approved model selection
+      required:
+        - modelVersionRef
+        - runtimeProfileRef
+        - visibility
+      properties:
+        modelVersionRef:
+          title: Model version
+          type: string
+          enum:
+            - qwen3.8-27b-w8a8
+        runtimeProfileRef:
+          title: Runtime profile
+          type: string
+          enum:
+            - qwen38-w8a8-ray-ascend-910b3-v1
+            - qwen38-w8a8-ray-ascend-910b3-tp2-v1
+          description: Recorded for review only; runtime creation remains disabled.
+        visibility:
+          title: Visibility
+          type: string
+          default: internal
+          enum:
+            - internal
+            - private
+    - title: Scheduling intent
+      required:
+        - requestedTensorParallelSize
+        - requestedDataParallelSize
+        - requestedPipelineParallelSize
+        - requestedReplicas
+        - requestedMaxModelLen
+        - requestedMaxNumSeqs
+        - requestedMaxNumBatchedTokens
+        - requestedGpuMemoryUtilization
+        - requestedPrefixCaching
+        - requestedMtpTokens
+        - priority
+      properties:
+        requestedTensorParallelSize:
+          title: Requested tensor parallel size (TP)
+          type: integer
+          default: 4
+          minimum: 1
+          maximum: 16
+          description: Recorded in the PR for the runtime contract; the first generated XR remains Stopped.
+        requestedPipelineParallelSize:
+          title: Requested pipeline parallel size (PP)
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 4
+          description: Recorded in the PR for the runtime contract; Ray workers remain at zero until the cache gate passes.
+        requestedDataParallelSize:
+          title: Data parallel size (DP)
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 4
+        requestedReplicas:
+          title: Requested replicas
+          type: integer
+          default: 1
+          minimum: 0
+          maximum: 4
+          description: Requested intent; the generated ModelDeployment is always submitted with desiredState=Stopped.
+        requestedMaxModelLen:
+          title: Context length
+          type: integer
+          default: 32768
+          enum: [8192, 16384, 32768]
+        requestedMaxNumSeqs:
+          title: Maximum concurrent sequences
+          type: integer
+          default: 64
+          enum: [16, 32, 64]
+        requestedMaxNumBatchedTokens:
+          title: Maximum batched tokens
+          type: integer
+          default: 8192
+          enum: [2048, 4096, 8192]
+        requestedGpuMemoryUtilization:
+          title: Accelerator memory target
+          type: number
+          default: 0.9
+          enum: [0.8, 0.85, 0.9]
+        requestedPrefixCaching:
+          title: Prefix caching
+          type: boolean
+          default: true
+        requestedMtpTokens:
+          title: MTP tokens
+          type: integer
+          default: 3
+          enum: [0, 1, 3]
+        priority:
+          title: Priority
+          type: string
+          default: normal
+          enum:
+            - low
+            - normal
+            - high
+  steps:
+    - id: createPullRequest
+      name: Create constrained GitOps pull request
+      action: model-platform:gitea-create-deployment-pr
+      input:
+        deploymentName: ${{ parameters.deploymentName }}
+        projectRef: ${{ parameters.projectRef }}
+        modelVersionRef: ${{ parameters.modelVersionRef }}
+        runtimeProfileRef: ${{ parameters.runtimeProfileRef }}
+        visibility: ${{ parameters.visibility }}
+        requestedTensorParallelSize: ${{ parameters.requestedTensorParallelSize }}
+        requestedDataParallelSize: ${{ parameters.requestedDataParallelSize }}
+        requestedPipelineParallelSize: ${{ parameters.requestedPipelineParallelSize }}
+        requestedReplicas: ${{ parameters.requestedReplicas }}
+        requestedMaxModelLen: ${{ parameters.requestedMaxModelLen }}
+        requestedMaxNumSeqs: ${{ parameters.requestedMaxNumSeqs }}
+        requestedMaxNumBatchedTokens: ${{ parameters.requestedMaxNumBatchedTokens }}
+        requestedGpuMemoryUtilization: ${{ parameters.requestedGpuMemoryUtilization }}
+        requestedPrefixCaching: ${{ parameters.requestedPrefixCaching }}
+        requestedMtpTokens: ${{ parameters.requestedMtpTokens }}
+        priority: ${{ parameters.priority }}
+  output:
+    links:
+      - title: Review deployment request PR
+        url: ${{ steps.createPullRequest.output.pullRequestUrl }}
+    text:
+      - title: Safety state
+        content: The request is declarative and starts Stopped. Tekton validates the catalog and immutable references; a human must approve the PR before a manual Argo CD Sync. Crossplane is the only component that writes the composed runtime objects.
