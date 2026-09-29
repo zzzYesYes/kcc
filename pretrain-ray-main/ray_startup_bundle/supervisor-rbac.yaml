@@ -1,0 +1,168 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/part-of: pretrain-ray-platform
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: supervisor
+    app.kubernetes.io/part-of: pretrain-ray-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: __KCC_RAY_CLUSTER__-incluster-kubeconfig
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_CLUSTER__
+    app.kubernetes.io/component: supervisor-auth
+    app.kubernetes.io/part-of: pretrain-ray-platform
+data:
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: service-account
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: service-account
+          namespace: __KCC_RAY_NAMESPACE__
+    current-context: in-cluster
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: supervisor
+    app.kubernetes.io/part-of: pretrain-ray-platform
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["__KCC_RAY_NAMESPACE__"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: supervisor
+    app.kubernetes.io/part-of: pretrain-ray-platform
+subjects:
+  - kind: ServiceAccount
+    name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    namespace: __KCC_RAY_NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: supervisor
+    app.kubernetes.io/part-of: pretrain-ray-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "create", "patch", "update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "create", "patch", "update"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: ["scheduling.volcano.sh"]
+    resources: ["podgroups"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  namespace: __KCC_RAY_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: supervisor
+    app.kubernetes.io/part-of: pretrain-ray-platform
+subjects:
+  - kind: ServiceAccount
+    name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    namespace: __KCC_RAY_NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  namespace: __KCC_RAY_EXPORTER_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: exporter-reader
+    app.kubernetes.io/part-of: pretrain-ray-platform
+rules:
+  - apiGroups: [""]
+    resources: ["pods/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+  namespace: __KCC_RAY_EXPORTER_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    app.kubernetes.io/component: exporter-reader
+    app.kubernetes.io/part-of: pretrain-ray-platform
+subjects:
+  - kind: ServiceAccount
+    name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__
+    namespace: __KCC_RAY_NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: __KCC_RAY_SUPERVISOR_SERVICE_ACCOUNT__

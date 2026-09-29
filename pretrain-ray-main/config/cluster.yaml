@@ -1,0 +1,54 @@
+schemaVersion: kcc-ray-config/v1
+
+# Kubernetes connection and the single RayCluster identity managed by this tool.
+kubernetes:
+  kubectlCommand: /usr/local/bin/k3s kubectl
+  kubeconfig: /home/ywj/.kube/k3s-learning.yaml
+  namespace: pretrain-ray
+  clusterName: pretrain-gpu00-gpu01
+
+# Normal `start` workers, standby replacement order, and the Ray head location.
+topology:
+  headNode: server-00
+  activeNodes:
+    - gpu-server-00
+    - gpu-server-01
+    - gpu-server-02
+    - gpu-server-03
+    - gpu-server-05
+    - gpu-server-06
+  spareNodes:
+    - gpu-server-07
+    - gpu-server-08
+
+# Shared by `check`, startup preflight, and automatic recovery diagnosis.
+npuCheck:
+  resourceName: huawei.com/Ascend910
+  exporterNamespace: npu-exporter
+  exporterApp: npu-exporter
+  exporterPort: 8082
+
+# Only selects the default template. Model/data/checkpoint/hyperparameters stay
+# in that template so there is one source of truth for training semantics.
+training:
+  defaultTemplate: ../ray_startup_bundle/training_templates/pretrain_150M.sh
+  workingDirectory: /mnt/models/CODE/MindSpeed-LLM-v2.3.0
+
+# Outer Kubernetes Job settings. Keep the image digest-pinned.
+supervisor:
+  node: server-00
+  serviceAccount: pretrain-ray-supervisor
+  image: 110.120.0.3:8889/pretrain/ray-head@sha256:121fff1a4b0f991121ba7dc85cbb7a77643d28c79cc355ba3f1536abb51c865b
+  imagePullPolicy: IfNotPresent
+  kubectlHostPath: /usr/local/bin/k3s
+  backoffLimit: 3
+  finishedTtlSeconds: 604800
+
+# Public workflow timeouts. `trainingSeconds: 0` means no training timeout;
+# `failedResourceRetentionSeconds: -1` would retain failed resources forever.
+timeouts:
+  rayStartupSeconds: 1800
+  hcclGateSeconds: 3600
+  trainingSeconds: 0
+  failedResourceRetentionSeconds: 1800
+  recoveryCleanupSeconds: 300

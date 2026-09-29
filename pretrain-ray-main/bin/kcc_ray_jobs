@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+launcher_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
+project_dir="$(cd -- "$(dirname -- "$launcher_path")/.." && pwd -P)"
+exec "$project_dir/bin/kcc_ray" "$@"
