@@ -1,0 +1,13 @@
+controller:
+  image: example.invalid/kcc/controller@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+  pollSeconds: 10
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+
+runtimeServiceAccount: kcc-training-runtime
+exporter:
+  namespace: npu-exporter
+

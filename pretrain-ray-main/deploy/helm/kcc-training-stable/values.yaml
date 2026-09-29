@@ -1,0 +1,45 @@
+imagePullSecrets: []
+
+controller:
+  image: example.invalid/kcc/controller@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+  pollSeconds: 10
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile: {type: RuntimeDefault}
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+
+runtimeServiceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  imagePullSecrets: []
+
+artifactGateway: {endpoint: https://artifact-gateway.invalid, tokenSecretName: ""}
+npuExporter:
+  enabled: false
+  namespace: npu-exporter
+  app: npu-exporter
+  port: 8082
+  rbac: {create: true}

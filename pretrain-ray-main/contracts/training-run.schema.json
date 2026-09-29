@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://training.kcc.io/schemas/training-run-v1beta1.json",
+  "title": "TrainingRun v1beta1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "training.kcc.io/v1beta1"
+    },
+    "kind": {
+      "const": "TrainingRun"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimeProfile",
+        "recipe",
+        "workers",
+        "recovery"
+      ],
+      "properties": {
+        "runtimeProfile": {
+          "$ref": "#/$defs/name"
+        },
+        "recipe": {
+          "$ref": "#/$defs/name"
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "suspend": {
+          "type": "boolean",
+          "default": false
+        },
+        "suspendMode": {
+          "enum": [
+            "Immediate",
+            "AfterCheckpoint"
+          ],
+          "default": "Immediate"
+        },
+        "dependsOn": {
+          "$ref": "#/$defs/name"
+        },
+        "recovery": {
+          "type": "object",
+          "description": "The CLI and CRD require (maxReplacements + 1) * (sameTopologyRetries + 1) <= 100.",
+          "additionalProperties": false,
+          "required": [
+            "sameTopologyRetries",
+            "maxReplacements",
+            "noProgressSeconds"
+          ],
+          "properties": {
+            "sameTopologyRetries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "maxReplacements": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "noProgressSeconds": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "nodeSelection": {
+          "$ref": "#/$defs/nodeSelection"
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtimeOverrides"
+        },
+        "training": {
+          "$ref": "#/$defs/trainingOverrides"
+        }
+      }
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "namespace"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "namespace": {
+          "$ref": "#/$defs/name"
+        },
+        "uid": {
+          "type": "string"
+        },
+        "resourceVersion": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "creationTimestamp": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/$defs/stringMap"
+        }
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "status",
+        "reason",
+        "message",
+        "lastTransitionTime"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "True",
+            "False",
+            "Unknown"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "lastTransitionTime": {
+          "type": "string"
+        }
+      }
+    },
+    "checkpoint": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trackerSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "snapshotSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "selectedDir": {
+          "type": "string"
+        },
+        "fileCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hashMode": {
+          "const": "sampled-v1"
+        },
+        "sampleBytesPerFile": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reportedFailedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "failedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "healthySpareNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "consecutive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "enum": [
+            "Pending",
+            "Queued",
+            "Starting",
+            "Running",
+            "Stopping",
+            "Recovering",
+            "Suspended",
+            "Succeeded",
+            "Stopped",
+            "ManualRequired"
+          ]
+        },
+        "observedGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spareNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "cleanupClusterName": {
+          "type": "string"
+        },
+        "rayAddress": {
+          "type": "string"
+        },
+        "submissionId": {
+          "type": "string"
+        },
+        "retriesUsed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replacementsUsed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suspendedFrom": {
+          "type": "string"
+        },
+        "stopRequestGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stopRequestedAt": {
+          "type": "string"
+        },
+        "stopBaselineIteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startTime": {
+          "type": "string"
+        },
+        "runningStartedAt": {
+          "type": "string"
+        },
+        "resultWaitStartedAt": {
+          "type": "string"
+        },
+        "completionTime": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "outputArtifact": {
+          "type": "string",
+          "pattern": "^artifact://[^/?#\\s]+/[^/?#\\s]+/[^/?#\\s]+$"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/checkpoint"
+        },
+        "diagnosis": {
+          "$ref": "#/$defs/diagnosis"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        }
+      }
+    },
+    "nodeSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activeNodes",
+        "spareNodes"
+      ],
+      "properties": {
+        "activeNodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        },
+        "spareNodes": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        }
+      }
+    },
+    "trainingOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wandbSecretRef": {
+          "type": "string",
+          "maxLength": 69,
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "arguments": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "environment": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string",
+              "pattern": "^artifact://[^/?#\\s]+/[^/?#\\s]+/[^/?#\\s]+$"
+            },
+            "model": {
+              "type": "string",
+              "pattern": "^artifact://[^/?#\\s]+/[^/?#\\s]+/[^/?#\\s]+$"
+            },
+            "data": {
+              "type": "string",
+              "pattern": "^artifact://[^/?#\\s]+/[^/?#\\s]+/[^/?#\\s]+$"
+            },
+            "outputSubpath": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^/]",
+              "maxLength": 1024
+            }
+          }
+        }
+      }
+    },
+    "runtimeOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "devicesPerNode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "images": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "head": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "worker": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+schemaVersion: kcc-ray-config/v2
+
+kubernetes:
+  kubectlCommand: /usr/local/bin/k3s kubectl
+  kubeconfig: /home/ywj/.kube/k3s-learning.yaml
+  namespace: pretrain-ray
+  clusterName: pretrain-a3
+
+topology:
+  headNode: server-00
+  activeNodes:
+    - a3-server-00
+  spareNodes: []
+  headSelector: {}
+  workerSelector:
+    accelerator-type: module-a3-16
+    kubernetes.io/arch: arm64
+    node.kubernetes.io/npu.chip.name: Ascend910
+    servertype: Ascend910A3-24
+
+accelerator:
+  resourceName: huawei.com/Ascend910
+  devicesPerNode: 8
+  runtimeClassName: null
+
+images:
+  rayHead: 110.120.0.3:8889/pretrain/ray-head@sha256:121fff1a4b0f991121ba7dc85cbb7a77643d28c79cc355ba3f1536abb51c865b
+  rayWorker: swr.cn-south-1.myhuaweicloud.com/ascendhub/verl_pt27_25rc3@sha256:2d25563176ab5313bbef71fea36c64a926391a404213165133f5fcba3c80768a
+  pullPolicy: IfNotPresent
+
+npuCheck:
+  exporterNamespace: npu-exporter
+  exporterApp: npu-exporter
+  exporterPort: 8082
+
+training:
+  defaultTemplate: ../ray_startup_bundle/training_templates/pretrain_150M.sh
+  workingDirectory: /mnt/models/zc/CODE/MindSpeed-LLM-v2.3.0
+  workspaceHostPath: /home
+
+supervisor:
+  node: server-00
+  serviceAccount: pretrain-ray-supervisor
+  image: 110.120.0.3:8889/pretrain/ray-head@sha256:121fff1a4b0f991121ba7dc85cbb7a77643d28c79cc355ba3f1536abb51c865b
+  imagePullPolicy: IfNotPresent
+  kubectlHostPath: /usr/local/bin/k3s
+  backoffLimit: 3
+  finishedTtlSeconds: 604800
+
+timeouts:
+  rayStartupSeconds: 1800
+  hcclGateSeconds: 3600
+  trainingSeconds: 0
+  failedResourceRetentionSeconds: 1800
+  recoveryCleanupSeconds: 300
+
+recovery:
+  sameTopologyRetries: 2
+  retryBackoffSeconds: 60
+  noProgressSeconds: 3600
+  diagnosisWindowSeconds: 300
+  diagnosisPollSeconds: 30
+  diagnosisStableSamples: 2

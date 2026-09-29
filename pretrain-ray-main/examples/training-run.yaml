@@ -1,0 +1,16 @@
+apiVersion: training.kcc.io/v1beta1
+kind: TrainingRun
+metadata:
+  name: qwen3-canary-001
+  namespace: kcc-training
+spec:
+  runtimeProfile: ascend-a3
+  recipe: qwen3-canary
+  workers: 2
+  suspend: false
+  suspendMode: Immediate
+  recovery:
+    sameTopologyRetries: 1
+    maxReplacements: 0
+    noProgressSeconds: 1800
+

@@ -1,0 +1,103 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: {{ include "kcc.clusterResourceName" . }} }
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: {{ include "kcc.clusterResourceName" . }} }
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kcc.controllerServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kcc.clusterResourceName" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: {{ include "kcc.fullname" . }}, namespace: {{ .Release.Namespace }} }
+rules:
+  - apiGroups: ["training.kcc.io"]
+    resources: ["trainingruns", "trainingrecipes", "trainingruntimeprofiles"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["training.kcc.io"]
+    resources: ["trainingruns/status"]
+    verbs: ["get", "update"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: {{ include "kcc.fullname" . }}, namespace: {{ .Release.Namespace }} }
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kcc.controllerServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kcc.fullname" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: {{ include "kcc.fullname" . }}-runtime, namespace: {{ .Release.Namespace }} }
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: {{ include "kcc.fullname" . }}-runtime, namespace: {{ .Release.Namespace }} }
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kcc.runtimeServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kcc.fullname" . }}-runtime
+{{- if and .Values.npuExporter.enabled .Values.npuExporter.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: {{ include "kcc.fullname" . }}-exporter, namespace: {{ .Values.npuExporter.namespace }} }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/proxy"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: {{ include "kcc.fullname" . }}-exporter, namespace: {{ .Values.npuExporter.namespace }} }
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kcc.controllerServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kcc.fullname" . }}-exporter
+{{- end }}
+

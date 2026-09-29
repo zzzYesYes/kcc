@@ -1,0 +1,58 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trainingrecipes.training.kcc.io
+spec:
+  group: training.kcc.io
+  scope: Namespaced
+  names:
+    plural: trainingrecipes
+    singular: trainingrecipe
+    kind: TrainingRecipe
+    shortNames: [trecipe]
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [framework, command, workingDirectory, environment, artifacts]
+              x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: TrainingRecipe spec is immutable; publish a new named recipe version
+                - rule: >-
+                    self.workingDirectory != '/' &&
+                    !self.workingDirectory.startsWith('../') &&
+                    !self.workingDirectory.endsWith('/..') &&
+                    !self.workingDirectory.contains('/../')
+                  message: workingDirectory must stay within the materialized source artifact
+                - rule: >-
+                    !self.artifacts.outputSubpath.startsWith('../') &&
+                    !self.artifacts.outputSubpath.endsWith('/..') &&
+                    !self.artifacts.outputSubpath.contains('/../')
+                  message: outputSubpath must be a safe relative path
+              properties:
+                framework: {type: string, minLength: 1}
+                command:
+                  type: array
+                  minItems: 1
+                  items: {type: string, minLength: 1}
+                workingDirectory: {type: string, minLength: 1, pattern: '^[^/]'}
+                environment:
+                  type: object
+                  default: {}
+                  additionalProperties: {type: string}
+                artifacts:
+                  type: object
+                  required: [source, model, data, outputSubpath]
+                  properties:
+                    source: {type: string, pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'}
+                    model: {type: string, pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'}
+                    data: {type: string, pattern: '^artifact://[^/?#\s]+/[^/?#\s]+/[^/?#\s]+$'}
+                    outputSubpath: {type: string, pattern: '^[^/]'}
+

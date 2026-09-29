@@ -1,0 +1,47 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trainingruns.training.kcc.io
+spec:
+  group: training.kcc.io
+  scope: Namespaced
+  names:
+    plural: trainingruns
+    singular: trainingrun
+    kind: TrainingRun
+    shortNames: [trun]
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      additionalPrinterColumns:
+        - {name: Phase, type: string, jsonPath: .status.phase}
+        - {name: Attempt, type: integer, jsonPath: .status.attempt}
+        - {name: Age, type: date, jsonPath: .metadata.creationTimestamp}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              additionalProperties: false
+              required: [runtimeProfile, recipe, workers, recovery]
+              properties:
+                runtimeProfile: {type: string, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'}
+                recipe: {type: string, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'}
+                workers: {type: integer, minimum: 1, maximum: 1024}
+                suspend: {type: boolean, default: false}
+                recovery:
+                  type: object
+                  additionalProperties: false
+                  required: [sameTopologyRetries, maxReplacements, noProgressSeconds]
+                  properties:
+                    sameTopologyRetries: {type: integer, minimum: 0, maximum: 10}
+                    maxReplacements: {type: integer, minimum: 0, maximum: 100}
+                    noProgressSeconds: {type: integer, minimum: 0}
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+

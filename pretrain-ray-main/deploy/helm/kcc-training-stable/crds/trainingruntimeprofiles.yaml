@@ -1,0 +1,176 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trainingruntimeprofiles.training.kcc.io
+spec:
+  group: training.kcc.io
+  scope: Namespaced
+  names:
+    plural: trainingruntimeprofiles
+    singular: trainingruntimeprofile
+    kind: TrainingRuntimeProfile
+    shortNames: [trp]
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [images, rayVersion, accelerator, workspace, scheduling, integrations]
+              x-kubernetes-validations:
+                - rule: >-
+                    !self.scheduling.activeNodes.exists(
+                      active, active in self.scheduling.spareNodes
+                    )
+                  message: activeNodes and spareNodes must be disjoint
+              properties:
+                images:
+                  type: object
+                  required: [head, worker]
+                  properties:
+                    head: {type: string, pattern: '^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$'}
+                    worker: {type: string, pattern: '^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$'}
+                    pullSecrets:
+                      type: array
+                      default: []
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 253
+                        pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$'
+                rayVersion: {type: string, minLength: 1}
+                accelerator:
+                  type: object
+                  required: [resourceName, devicesPerNode]
+                  x-kubernetes-validations:
+                    - rule: "!has(self.physicalDeviceIDs) || size(self.physicalDeviceIDs) == self.devicesPerNode"
+                      message: physicalDeviceIDs must contain exactly devicesPerNode entries
+                    - rule: "!has(self.physicalDeviceIDs) || self.resourceName == 'huawei.com/Ascend910'"
+                      message: physicalDeviceIDs currently requires huawei.com/Ascend910
+                  properties:
+                    resourceName: {type: string, minLength: 1}
+                    devicesPerNode: {type: integer, minimum: 1, maximum: 64}
+                    physicalDeviceIDs:
+                      type: array
+                      minItems: 1
+                      maxItems: 64
+                      x-kubernetes-list-type: set
+                      items: {type: integer, minimum: 0, maximum: 63}
+                    runtimeClassName:
+                      type: string
+                      minLength: 1
+                      maxLength: 63
+                      pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                workspace:
+                  type: object
+                  required: [claimName, mountPath]
+                  properties:
+                    claimName:
+                      type: string
+                      minLength: 1
+                      maxLength: 63
+                      pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                    mountPath: {type: string, pattern: '^/'}
+                scheduling:
+                  type: object
+                  required: [activeNodes, spareNodes, headSelector, workerSelector]
+                  properties:
+                    activeNodes:
+                      type: array
+                      minItems: 1
+                      x-kubernetes-list-type: set
+                      maxItems: 1024
+                      items: {type: string, minLength: 1, maxLength: 253}
+                    spareNodes:
+                      type: array
+                      x-kubernetes-list-type: set
+                      maxItems: 100
+                      items: {type: string, minLength: 1, maxLength: 253}
+                    headSelector:
+                      type: object
+                      additionalProperties: {type: string}
+                    workerSelector:
+                      type: object
+                      additionalProperties: {type: string}
+                integrations:
+                  type: object
+                  required: [rankTableProvider, healthProvider]
+                  properties:
+                    rankTableProvider: {type: string, enum: [clusterd]}
+                    healthProvider: {type: string, enum: [npu-exporter, kubernetes]}
+                    artifactProvider: {type: string, enum: [gateway, workspace], default: gateway}
+                podTemplate:
+                  type: object
+                  properties:
+                    head:
+                      type: object
+                      properties:
+                        resources:
+                          type: object
+                          required: [requests, limits]
+                          properties:
+                            requests:
+                              type: object
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                x-kubernetes-int-or-string: true
+                            limits:
+                              type: object
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                x-kubernetes-int-or-string: true
+                        tolerations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key: {type: string}
+                              operator: {type: string, enum: [Exists, Equal]}
+                              value: {type: string}
+                              effect: {type: string, enum: [NoSchedule, PreferNoSchedule, NoExecute]}
+                              tolerationSeconds: {type: integer, minimum: 0}
+                        priorityClassName: {type: string, minLength: 1}
+                        rayCpus: {type: integer, minimum: 1}
+                    worker:
+                      type: object
+                      properties:
+                        resources:
+                          type: object
+                          required: [requests, limits]
+                          properties:
+                            requests:
+                              type: object
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                x-kubernetes-int-or-string: true
+                            limits:
+                              type: object
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                x-kubernetes-int-or-string: true
+                        tolerations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key: {type: string}
+                              operator: {type: string, enum: [Exists, Equal]}
+                              value: {type: string}
+                              effect: {type: string, enum: [NoSchedule, PreferNoSchedule, NoExecute]}
+                              tolerationSeconds: {type: integer, minimum: 0}
+                        priorityClassName: {type: string, minLength: 1}
+                        rayCpus: {type: integer, minimum: 1}

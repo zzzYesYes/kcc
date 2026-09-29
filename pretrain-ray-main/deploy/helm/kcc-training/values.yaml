@@ -1,0 +1,12 @@
+serviceAccount:
+  create: true
+  name: kcc-training-supervisor
+
+rbac:
+  create: true
+  exporterReader:
+    enabled: true
+    namespace: npu-exporter
+
+# The controller workload is intentionally absent in v0.1.0. Existing
+# bin/kcc_ray remains the execution entrypoint during incremental migration.
