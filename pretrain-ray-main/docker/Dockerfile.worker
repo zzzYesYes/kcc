@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+ARG VERSION=1.0.0
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.title="kcc-training-worker" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+ARG CANN_ASCEND_DIR=/usr/local/Ascend/cann/ascend-toolkit/latest
+
+WORKDIR /opt/kcc
+COPY pyproject.toml ./
+COPY src ./src
+COPY ray_startup_bundle/hccl_runtime/hccl_check /opt/kcc-hccl/hccl_check
+COPY ray_startup_bundle/hccl_runtime/native /opt/kcc-hccl/native
+RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation . \
+    && make -C /opt/kcc-hccl/native ASCEND_DIR=${CANN_ASCEND_DIR} \
+    && install -D -m 0755 /opt/kcc-hccl/native/bin/ranktable_allreduce_probe \
+       /opt/kcc-hccl/bin/ranktable_allreduce_probe \
+    && rm -rf /opt/kcc-hccl/native/build
+
+ENV PYTHONPATH=/opt/kcc-hccl \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HCCL_CHECK_PROBE=/opt/kcc-hccl/bin/ranktable_allreduce_probe
+

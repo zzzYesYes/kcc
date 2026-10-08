@@ -1,0 +1,13 @@
+apiVersion: training.kcc.io/v1beta1
+kind: TrainingRecipe
+metadata: {name: qwen3-canary, namespace: kcc-training}
+spec:
+  framework: mindspeed
+  command: [python, pretrain_gpt.py, --config, configs/canary.yaml]
+  workingDirectory: /workspace/source
+  environment: {TOKENIZERS_PARALLELISM: "false"}
+  artifacts:
+    source: artifact://training/qwen3-source/v1
+    model: artifact://training/qwen3-base/v1
+    data: artifact://training/qwen3-data/v1
+    outputSubpath: runs/qwen3-canary

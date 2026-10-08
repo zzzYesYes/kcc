@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+
+ARG BASE_IMAGE
+ARG VERSION=1.0.0
+ARG VCS_REF=unknown
+ARG LIGHTEVAL_VERSION=0.13.1.dev0
+ARG LIGHTEVAL_VCS_REF=unknown
+ARG LIGHTEVAL_VCS_DIRTY=unknown
+
+LABEL org.opencontainers.image.title="kcc-training-worker-lighteval" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="Apache-2.0 AND MIT" \
+      io.kcc.training.base-image="${BASE_IMAGE}" \
+      io.kcc.training.lighteval.version="${LIGHTEVAL_VERSION}" \
+      io.kcc.training.lighteval.revision="${LIGHTEVAL_VCS_REF}" \
+      io.kcc.training.lighteval.dirty="${LIGHTEVAL_VCS_DIRTY}" \
+      io.kcc.training.lighteval.pythonpath="/opt/kcc/lighteval-python"
+
+COPY lighteval-python/ /opt/kcc/lighteval-python/
+
+# Keep LightEval opt-in.  The training process retains the base image's
+# PYTHONPATH; the evaluator prepends this directory only to its own subprocess.
+# The build script already imports this exact payload with the target worker's
+# Python on an arm64 node. Keep final assembly COPY-only so an amd64 control
+# host does not need QEMU merely to package the arm64 worker image.

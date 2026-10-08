@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["controller", "runtimeServiceAccount", "exporter"],
+  "properties": {
+    "controller": {
+      "type": "object",
+      "required": ["image", "imagePullPolicy", "replicas", "pollSeconds", "resources"],
+      "properties": {
+        "image": {"type": "string", "pattern": "^\\S+@sha256:[0-9a-f]{64}$"},
+        "imagePullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]},
+        "replicas": {"type": "integer", "minimum": 2},
+        "pollSeconds": {"type": "number", "minimum": 1},
+        "resources": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "runtimeServiceAccount": {"type": "string", "minLength": 1},
+    "exporter": {
+      "type": "object",
+      "required": ["namespace"],
+      "properties": {"namespace": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

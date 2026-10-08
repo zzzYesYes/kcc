@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kcc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "kcc.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {app.kubernetes.io/name: kcc-training, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        {{- include "kcc.labels" . | nindent 8 }}
+        {{- with .Values.controller.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.controller.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "kcc.controllerServiceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.controller.podSecurityContext | nindent 8 }}
+      containers:
+        - name: controller
+          image: {{ .Values.controller.image | quote }}
+          imagePullPolicy: {{ .Values.controller.imagePullPolicy }}
+          command: ["python", "-m", "kcc_training.controller_stable"]
+          args: [--namespace, $(POD_NAMESPACE), --runtime-service-account, {{ include "kcc.runtimeServiceAccountName" . | quote }}, --poll-seconds, {{ .Values.controller.pollSeconds | quote }}]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: KCC_ARTIFACT_GATEWAY, value: {{ .Values.artifactGateway.endpoint | quote }} }
+            - {name: KCC_NPU_EXPORTER_NAMESPACE, value: {{ .Values.npuExporter.namespace | quote }} }
+            - {name: KCC_NPU_EXPORTER_APP, value: {{ .Values.npuExporter.app | quote }} }
+            - {name: KCC_NPU_EXPORTER_PORT, value: {{ .Values.npuExporter.port | quote }} }
+            {{- if .Values.artifactGateway.tokenSecretName }}
+            - {name: KCC_ARTIFACT_TOKEN_SECRET, value: {{ .Values.artifactGateway.tokenSecretName | quote }} }
+            {{- end }}
+          ports: [{name: health, containerPort: 8080}]
+          livenessProbe: {httpGet: {path: /healthz, port: health}, initialDelaySeconds: 5, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /readyz, port: health}, initialDelaySeconds: 2, periodSeconds: 5}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.controller.securityContext | nindent 12 }}
+      terminationGracePeriodSeconds: 30

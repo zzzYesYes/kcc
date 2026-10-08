@@ -1,0 +1,13 @@
+.PHONY: release-check helm package
+
+# Compatibility wrapper. The only release implementation is the stable target
+# in the root Makefile.
+release-check:
+	$(MAKE) audit
+
+helm:
+	$(MAKE) helm-lint
+
+package:
+	$(MAKE) package
+

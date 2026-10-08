@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+launcher_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
+project_dir="$(cd -- "$(dirname -- "$launcher_path")/.." && pwd -P)"
+bundle_dir="$project_dir/ray_startup_bundle"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  kcc_ray check [--node NODE...]
+  kcc_ray start [--resume] [--all-nodes] [--fresh] [START_OPTIONS...]
+  kcc_ray status --run-id RUN_ID [CONTROL_OPTIONS...]
+  kcc_ray logs --run-id RUN_ID [--supervisor] [CONTROL_OPTIONS...]
+  kcc_ray cancel --run-id RUN_ID [CONTROL_OPTIONS...]
+  kcc_ray stop --run-id RUN_ID [STOP_OPTIONS...]
+  kcc_ray stop-after-checkpoint --run-id RUN_ID [STOP_OPTIONS...]
+  kcc_ray --help
+
+Commands:
+  check     Check all configured training and spare nodes by default without
+            starting Ray; repeated --node values select only those nodes.
+  start     Create a Kubernetes Supervisor Job for resumable training and
+            return immediately. Add --resume to reattach the same run safely,
+            --all-nodes to train on every configured node, or --fresh to
+            start at zero. Use --train-script PATH to select a template;
+            the shipped config defaults to training_templates/pretrain_150M.sh.
+            The single-pipeline modes remain foreground-only.
+  status    Show Supervisor Job, recovery state, and current Ray Job status.
+  logs      Print the current Ray Job driver logs; add --supervisor for the
+            outer orchestration logs, including startup and recovery.
+  cancel    Stop the current Ray Job, then clean up its owned RayCluster.
+  stop      Stop the current run immediately without deleting checkpoints.
+  stop-after-checkpoint
+            Stop after every worker verifies the next committed checkpoint.
+
+Defaults:
+  config/cluster.yaml is the single source for Kubernetes, topology, NPU
+  checks, training template, Supervisor, and lifecycle timeout defaults.
+  Explicit command options override it for one invocation. Set
+  KCC_RAY_CONFIG to select another complete configuration file.
+EOF
+}
+
+command_name="${1:-}"
+case "$command_name" in
+    check)
+        shift
+        entrypoint="$bundle_dir/environment_check.py"
+        ;;
+    start)
+        shift
+        entrypoint="$bundle_dir/supervisor_job.py"
+        all_nodes_requested=false
+        fresh_requested=false
+        resume_requested=false
+        explicit_node_requested=false
+        allow_topology_change_requested=false
+        forwarded_arguments=()
+        for argument in "$@"; do
+            case "$argument" in
+                --all-nodes)
+                    all_nodes_requested=true
+                    forwarded_arguments+=("$argument")
+                    ;;
+                --resume)
+                    resume_requested=true
+                    forwarded_arguments+=("$argument")
+                    ;;
+                --fresh)
+                    fresh_requested=true
+                    forwarded_arguments+=("$argument")
+                    ;;
+                --node | --node=*)
+                    explicit_node_requested=true
+                    forwarded_arguments+=("$argument")
+                    ;;
+                --allow-topology-change)
+                    allow_topology_change_requested=true
+                    forwarded_arguments+=("$argument")
+                    ;;
+                *)
+                    forwarded_arguments+=("$argument")
+                    ;;
+            esac
+        done
+        if [[ "$all_nodes_requested" == true && "$explicit_node_requested" == true ]]; then
+            printf "kcc_ray: --all-nodes cannot be combined with explicit --node values.\n" >&2
+            exit 2
+        fi
+        if [[ "$resume_requested" == true && ( "$fresh_requested" == true || "$all_nodes_requested" == true ) ]]; then
+            printf "kcc_ray: --resume is only valid for the default recovery mode.\n" >&2
+            exit 2
+        fi
+        if [[ "$explicit_node_requested" == true && "$allow_topology_change_requested" == false ]]; then
+            forwarded_arguments+=(--allow-topology-change)
+        fi
+        if [[ "$all_nodes_requested" == true && "$allow_topology_change_requested" == false ]]; then
+            forwarded_arguments+=(--allow-topology-change)
+        fi
+        if [[ "$fresh_requested" == true || "$all_nodes_requested" == true ]]; then
+            entrypoint="$bundle_dir/start_ray.py"
+        fi
+        if [[ "$fresh_requested" == true || "$all_nodes_requested" == true ]]; then
+            set -- "${forwarded_arguments[@]}"
+        else
+            set -- start "${forwarded_arguments[@]}"
+        fi
+        ;;
+    status | logs | cancel)
+        entrypoint="$bundle_dir/ray_job_control.py"
+        ;;
+    stop | stop-after-checkpoint)
+        entrypoint="$bundle_dir/training_control.py"
+        ;;
+    "" | -h | --help | help)
+        usage
+        exit 0
+        ;;
+    *)
+        printf 'kcc_ray: unknown command: %s\n\n' "$command_name" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
+if [[ ! -f "$entrypoint" || -L "$entrypoint" ]]; then
+    printf 'kcc_ray: launcher entrypoint is unavailable: %s\n' "$entrypoint" >&2
+    exit 1
+fi
+
+export PYTHONUNBUFFERED=1
+exec python3 "$entrypoint" "$@"

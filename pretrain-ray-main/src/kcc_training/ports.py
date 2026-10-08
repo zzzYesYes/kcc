@@ -1,0 +1,36 @@
+"""Infrastructure boundaries for incremental extraction of the legacy scripts."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Mapping, Protocol, Sequence
+
+
+class KubernetesPort(Protocol):
+    def get(self, kind: str, name: str, namespace: str) -> Mapping[str, Any] | None: ...
+    def apply(self, manifest: Mapping[str, Any]) -> Mapping[str, Any]: ...
+    def delete_owned(self, kind: str, name: str, namespace: str, owner_uid: str) -> None: ...
+
+
+class RayJobsPort(Protocol):
+    def submit_once(self, address: str, submission_id: str, command: Sequence[str]) -> str: ...
+    def status(self, address: str, submission_id: str) -> str: ...
+    def stop(self, address: str, submission_id: str) -> None: ...
+
+
+class DeviceHealthPort(Protocol):
+    def observe(self, nodes: Sequence[str]) -> Mapping[str, Any]: ...
+
+
+class RankTablePort(Protocol):
+    def resolve(self, cluster_name: str, nodes: Sequence[str]) -> tuple[bytes, str]: ...
+
+
+class CheckpointPort(Protocol):
+    def committed_iteration(self, workers: Sequence[str]) -> int | None: ...
+    def views_are_consistent(self, workers: Sequence[str]) -> bool: ...
+
+
+class ArtifactPublisherPort(Protocol):
+    def publish(self, source: Path, artifact_name: str) -> str: ...
+

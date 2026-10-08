@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["imagePullSecrets", "controller", "runtimeServiceAccount", "artifactGateway", "npuExporter"],
+  "properties": {
+    "imagePullSecrets": {"$ref": "#/$defs/imagePullSecrets"},
+    "controller": {
+      "type": "object",
+      "required": [
+        "image",
+        "imagePullPolicy",
+        "replicas",
+        "pollSeconds",
+        "podDisruptionBudget",
+        "serviceAccount",
+        "podAnnotations",
+        "podLabels",
+        "nodeSelector",
+        "tolerations",
+        "affinity",
+        "topologySpreadConstraints",
+        "priorityClassName",
+        "podSecurityContext",
+        "securityContext",
+        "resources"
+      ],
+      "properties": {
+        "image": {"type": "string", "pattern": "^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$"},
+        "imagePullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]},
+        "replicas": {"type": "integer", "minimum": 1},
+        "podDisruptionBudget": {
+          "type": "object",
+          "required": ["enabled", "minAvailable"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "minAvailable": {
+              "anyOf": [
+                {"type": "integer", "minimum": 0},
+                {"type": "string", "minLength": 1}
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "pollSeconds": {"type": "number", "minimum": 1},
+        "serviceAccount": {"$ref": "#/$defs/serviceAccount"},
+        "podAnnotations": {"$ref": "#/$defs/stringMap"},
+        "podLabels": {"$ref": "#/$defs/stringMap"},
+        "nodeSelector": {"$ref": "#/$defs/stringMap"},
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "affinity": {"type": "object"},
+        "topologySpreadConstraints": {"type": "array", "items": {"type": "object"}},
+        "priorityClassName": {"type": "string"},
+        "podSecurityContext": {"type": "object"},
+        "securityContext": {"type": "object"},
+        "resources": {"$ref": "#/$defs/resources"}
+      },
+      "additionalProperties": false
+    },
+    "runtimeServiceAccount": {
+      "type": "object",
+      "required": ["create", "name", "annotations", "imagePullSecrets"],
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"$ref": "#/$defs/stringMap"},
+        "imagePullSecrets": {"$ref": "#/$defs/imagePullSecrets"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"create": {"const": false}}},
+          "then": {"properties": {"name": {"minLength": 1}}}
+        }
+      ]
+    },
+    "artifactGateway": {
+      "type": "object",
+      "required": ["endpoint", "tokenSecretName"],
+      "properties": {
+        "endpoint": {"type": "string", "pattern": "^https?://"},
+        "tokenSecretName": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "npuExporter": {
+      "type": "object",
+      "required": ["enabled", "namespace", "app", "port", "rbac"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "namespace": {"type": "string", "minLength": 1},
+        "app": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "rbac": {
+          "type": "object",
+          "required": ["create"],
+          "properties": {"create": {"type": "boolean"}},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}},
+        "additionalProperties": false
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "required": ["create", "name", "annotations"],
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"$ref": "#/$defs/stringMap"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"create": {"const": false}}},
+          "then": {"properties": {"name": {"minLength": 1}}}
+        }
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number"]}
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number"]}
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

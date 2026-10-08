@@ -1,0 +1,16 @@
+{{- if .Values.controller.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kcc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kcc.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.controller.podDisruptionBudget.minAvailable | toJson }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kcc-training
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
